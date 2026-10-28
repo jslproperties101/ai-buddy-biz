@@ -6,6 +6,7 @@ import '../services/session.dart';
 import 'catalog_screen.dart';
 import 'crm_screen.dart';
 import 'invoices_screen.dart';
+import 'logistics_screen.dart';
 import 'more_screen.dart';
 import 'pos_screen.dart';
 
@@ -66,13 +67,24 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final s = Session.instance;
-    final tabs = <(String, IconData, Widget)>[
-      if (s.can('pos.sale.create')) ('Sell', Icons.point_of_sale, PosScreen(onSaleDone: _refreshPending)),
-      if (s.can('inv.product.view'))
+    // Each business sees only the modules it switched on and its role allows.
+    // Four fit in the bottom bar; any extra appear at the top of More.
+    final features = <(String, IconData, Widget)>[
+      if (s.has('LOG') && s.can('log.shipment.view')) ('Shipping', Icons.local_shipping_outlined, const LogisticsScreen()),
+      if (s.has('POS') && s.can('pos.sale.create')) ('Sell', Icons.point_of_sale, PosScreen(onSaleDone: _refreshPending)),
+      if (s.has('INV') && s.can('inv.product.view'))
         ('Catalog', Icons.inventory_2_outlined, CatalogScreen(onChanged: () => _sync(silent: true))),
-      if (s.can('fin.invoice.view')) ('Invoices', Icons.receipt_long_outlined, const InvoicesScreen()),
-      if (s.can('crm.deal.view') || s.can('crm.contact.view')) ('CRM', Icons.people_alt_outlined, const CrmScreen()),
-      ('More', Icons.menu, MoreScreen(onOutletChanged: () => _sync(silent: true))),
+      if (s.has('FIN') && s.can('fin.invoice.view')) ('Invoices', Icons.receipt_long_outlined, const InvoicesScreen()),
+      if (s.has('CRM') && (s.can('crm.deal.view') || s.can('crm.contact.view'))) ('CRM', Icons.people_alt_outlined, const CrmScreen()),
+    ];
+    final primary = features.take(4).toList();
+    final tabs = <(String, IconData, Widget)>[
+      ...primary,
+      ('More', Icons.menu, MoreScreen(
+        onOutletChanged: () => _sync(silent: true),
+        onModulesChanged: () => setState(() => _tab = 0),
+        extra: features.skip(4).toList(),
+      )),
     ];
     if (_tab >= tabs.length) _tab = 0;
 
@@ -114,7 +126,9 @@ class _HomeScreenState extends State<HomeScreen> {
             : null,
       ),
       body: IndexedStack(index: _tab, children: [for (final t in tabs) t.$3]),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: tabs.length < 2
+          ? null
+          : NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) async {
           setState(() => _tab = i);

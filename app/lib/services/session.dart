@@ -37,6 +37,7 @@ class Session {
   String defaultTaxCode = 'standard';
   String roleName = '';
   Set<String> perms = {};
+  Set<String> modules = {};
   List<Outlet> outlets = [];
   Outlet? outlet;
 
@@ -48,6 +49,9 @@ class Session {
   double openShiftCash = 0;
 
   bool can(String perm) => perms.contains(perm);
+
+  /// Module switched on for this business (POS, INV, FIN, CRM, LOG, …)
+  bool has(String module) => modules.contains(module);
 
   /// Returns false when the user has no business yet.
   Future<bool> load() async {
@@ -73,11 +77,25 @@ class Session {
     final rp = await db.from('role_permissions').select('permission_code').eq('role_id', m['role_id']);
     perms = {for (final r in rp) r['permission_code'] as String};
 
+    await reloadModules();
+
     await reloadOutlets();
     final savedOutlet = prefs.getString('outlet_id');
     outlet = outlets.where((o) => o.id == savedOutlet).firstOrNull ?? (outlets.isEmpty ? null : outlets.first);
     await _loadOutletState();
     return true;
+  }
+
+  Future<void> reloadModules() async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = 'modules_$tenantId';
+    try {
+      final rows = await db.from('tenant_modules').select('module').eq('tenant_id', tenantId!).eq('enabled', true);
+      modules = {for (final r in rows) r['module'] as String};
+      await prefs.setStringList(key, modules.toList());
+    } catch (_) {
+      modules = (prefs.getStringList(key) ?? ['POS', 'INV', 'FIN', 'CRM']).toSet();
+    }
   }
 
   Future<void> reloadOutlets() async {

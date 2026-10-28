@@ -14,7 +14,7 @@ All-in-one business super app: POS, inventory, invoicing, accounting, tax, CRM, 
 | B | POS, inventory, SKU, barcode and labeling (first APK) | Built |
 | C | Invoicing, accounting, zone-based tax, reports, shifts | Built |
 | D | CRM & leads: pipeline, scoring, tasks, loyalty, campaigns, web lead form | Built |
-| E | Shipping, cargo, air waybills, vessels, supplier CRM | |
+| E | Shipping, cargo, air waybills, containers, vessels, customs landed cost, supplier CRM, purchasing | Built |
 | F | HR and payroll | |
 | G | Legal and AI lawyer | |
 | H | Kids care monitor | |
@@ -26,7 +26,7 @@ All-in-one business super app: POS, inventory, invoicing, accounting, tax, CRM, 
 
 Flutter app. The APK is built by GitHub Actions (`.github/workflows/android.yml`) on every push to `main` and published to a release per batch:
 
-`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-d/ai-buddy-biz-batch-d.apk`
+`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-e/ai-buddy-biz-batch-e.apk`
 
 Set repo secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` first, and apply `supabase/migrations/*.sql` in order.
 
@@ -53,3 +53,12 @@ Campaigns and "send from business" messages are queued in `outbound_messages` an
 
 `web/lead-form.html` posts enquiries to `capture_lead()` with the business's form key
 (More → CRM settings). Put in the project URL, anon key and form key, then host it or embed it.
+
+## Shipping & customs (Batch E)
+
+- Turn on **Shipping & cargo** in More → Modules (on by default for the freight templates).
+- Validation built in: container numbers (ISO 6346), air waybills (mod-7) and IMO ship numbers are check-digit verified.
+- Chargeable weight: air 1:6000, courier 1:5000, road 1:3000, sea LCL W/M, FCL in TEU.
+- Customer tracking page: host `web/track.html`, then set the repo **variable** `TRACK_URL` to its address so the app shares links.
+- Customs: `customs_profiles` holds valuation basis and low-value rules per country (seeded for MY, US, EU, GB, AU, SG — verify);
+  `duty_rates` is empty by design — load a tariff schedule from a data provider or enter rates per HS code.

@@ -171,7 +171,7 @@ class _TaxSettingsScreenState extends State<TaxSettingsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Tax')),
       floatingActionButton: _canEdit
-          ? FloatingActionButton.extended(onPressed: _addRate, icon: const Icon(Icons.add), label: const Text('Add rate'))
+          ? FloatingActionButton.extended(heroTag: null, onPressed: _addRate, icon: const Icon(Icons.add), label: const Text('Add rate'))
           : null,
       body: _loading
           ? const Center(child: CircularProgressIndicator())

@@ -77,7 +77,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
           ),
       ]),
       floatingActionButton: widget.continuous
-          ? FloatingActionButton.extended(
+          ? FloatingActionButton.extended(heroTag: null, 
               onPressed: () => Navigator.of(context).pop(),
               icon: const Icon(Icons.check),
               label: const Text('Done'),

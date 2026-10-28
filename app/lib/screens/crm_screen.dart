@@ -183,7 +183,7 @@ class _LeadsTabState extends State<_LeadsTab> with AutomaticKeepAliveClientMixin
         ]),
       ),
       floatingActionButton: _s.can('crm.deal.manage')
-          ? FloatingActionButton.extended(onPressed: () => _open(), icon: const Icon(Icons.add), label: const Text('Lead'))
+          ? FloatingActionButton.extended(heroTag: null, onPressed: () => _open(), icon: const Icon(Icons.add), label: const Text('Lead'))
           : null,
     );
   }
@@ -358,7 +358,7 @@ class _CustomersTabState extends State<_CustomersTab> with AutomaticKeepAliveCli
         ),
       ]),
       floatingActionButton: (_s.can('crm.contact.manage') || _s.can('crm.contact.create'))
-          ? FloatingActionButton(onPressed: _add, child: const Icon(Icons.person_add_alt))
+          ? FloatingActionButton(heroTag: null, onPressed: _add, child: const Icon(Icons.person_add_alt))
           : null,
     );
   }
@@ -534,7 +534,7 @@ class _CampaignsTabState extends State<_CampaignsTab> with AutomaticKeepAliveCli
               ]),
             ),
       floatingActionButton:
-          FloatingActionButton.extended(onPressed: () => _open(), icon: const Icon(Icons.campaign_outlined), label: const Text('Campaign')),
+          FloatingActionButton.extended(heroTag: null, onPressed: () => _open(), icon: const Icon(Icons.campaign_outlined), label: const Text('Campaign')),
     );
   }
 }

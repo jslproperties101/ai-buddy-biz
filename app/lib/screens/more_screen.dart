@@ -2,14 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../services/session.dart';
 import 'crm_settings_screen.dart';
+import 'modules_screen.dart';
 import 'reports_screen.dart';
 import 'sales_history_screen.dart';
 import 'shift_screen.dart';
+import 'suppliers_screen.dart';
 import 'tax_settings_screen.dart';
 
 class MoreScreen extends StatefulWidget {
   final VoidCallback onOutletChanged;
-  const MoreScreen({super.key, required this.onOutletChanged});
+  final VoidCallback? onModulesChanged;
+  final List<(String, IconData, Widget)> extra; // features that didn't fit in the bottom bar
+  const MoreScreen({super.key, required this.onOutletChanged, this.onModulesChanged, this.extra = const []});
   @override
   State<MoreScreen> createState() => _MoreScreenState();
 }
@@ -47,7 +51,22 @@ class _MoreScreenState extends State<MoreScreen> {
   Widget build(BuildContext context) {
     final s = Session.instance;
     return ListView(children: [
-      if (s.can('pos.shift.manage'))
+      for (final e in widget.extra)
+        ListTile(
+          leading: Icon(e.$2),
+          title: Text(e.$1),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => _go(Scaffold(appBar: AppBar(title: Text(e.$1)), body: e.$3)),
+        ),
+      if (widget.extra.isNotEmpty) const Divider(),
+      if (s.can('inv.supplier.manage'))
+        ListTile(
+          leading: const Icon(Icons.factory_outlined),
+          title: const Text('Suppliers & purchasing'),
+          subtitle: const Text('Supplier scorecards, documents, purchase orders'),
+          onTap: () => _go(const SuppliersScreen()),
+        ),
+      if (s.can('pos.shift.manage') && s.has('POS'))
         ListTile(
           leading: const Icon(Icons.timer_outlined),
           title: const Text('Shift & cash drawer'),
@@ -81,6 +100,17 @@ class _MoreScreenState extends State<MoreScreen> {
         subtitle: Text('Rates for ${s.outlet?.name ?? 'this outlet'}'),
         onTap: () => _go(const TaxSettingsScreen()),
       ),
+      if (s.can('core.module.manage'))
+        ListTile(
+          leading: const Icon(Icons.widgets_outlined),
+          title: const Text('Modules'),
+          subtitle: const Text('Turn features on or off for your business'),
+          onTap: () async {
+            final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(builder: (_) => const ModulesScreen()));
+            if (changed == true) widget.onModulesChanged?.call();
+            if (mounted) setState(() {});
+          },
+        ),
       const Divider(),
       ListTile(
         leading: const Icon(Icons.store_outlined),

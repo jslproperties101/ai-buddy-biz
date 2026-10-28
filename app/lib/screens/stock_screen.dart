@@ -266,7 +266,7 @@ class _StockScreenState extends State<StockScreen> {
         ),
       ]),
       floatingActionButton: _s.can('inv.stock.adjust')
-          ? FloatingActionButton.extended(
+          ? FloatingActionButton.extended(heroTag: null, 
               onPressed: _scanToFind,
               icon: const Icon(Icons.qr_code_scanner),
               label: const Text('Scan to count'),

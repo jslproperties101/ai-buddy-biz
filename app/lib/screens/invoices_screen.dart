@@ -138,7 +138,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
         ),
       ]),
       floatingActionButton: _s.can('fin.invoice.manage')
-          ? FloatingActionButton.extended(onPressed: () => _open(), icon: const Icon(Icons.add), label: const Text('Invoice'))
+          ? FloatingActionButton.extended(heroTag: null, onPressed: () => _open(), icon: const Icon(Icons.add), label: const Text('Invoice'))
           : null,
     );
   }

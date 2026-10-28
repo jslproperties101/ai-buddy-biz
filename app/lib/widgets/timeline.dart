@@ -19,9 +19,11 @@ const activityIcons = <String, IconData>{
 class Timeline extends StatefulWidget {
   final String? contactId;
   final String? dealId;
+  final String? supplierId;
+  final String? shipmentId;
   final VoidCallback? onChanged;
-  const Timeline({super.key, this.contactId, this.dealId, this.onChanged})
-      : assert(contactId != null || dealId != null);
+  const Timeline({super.key, this.contactId, this.dealId, this.supplierId, this.shipmentId, this.onChanged})
+      : assert(contactId != null || dealId != null || supplierId != null || shipmentId != null);
 
   @override
   State<Timeline> createState() => TimelineState();
@@ -31,7 +33,11 @@ class TimelineState extends State<Timeline> {
   List<Map<String, dynamic>> _rows = [];
   bool _loading = true;
   Session get _s => Session.instance;
-  bool get _canWrite => _s.can('crm.deal.manage') || _s.can('crm.contact.manage');
+  bool get _canWrite => widget.shipmentId != null
+      ? _s.can('log.shipment.manage')
+      : widget.supplierId != null
+          ? _s.can('inv.supplier.manage')
+          : _s.can('crm.deal.manage') || _s.can('crm.contact.manage');
 
   @override
   void initState() {
@@ -42,7 +48,15 @@ class TimelineState extends State<Timeline> {
   Future<void> reload() async {
     try {
       var q = _s.db.from('activities').select().eq('tenant_id', _s.tenantId!);
-      q = widget.dealId != null ? q.eq('deal_id', widget.dealId!) : q.eq('contact_id', widget.contactId!);
+      if (widget.shipmentId != null) {
+        q = q.eq('shipment_id', widget.shipmentId!);
+      } else if (widget.supplierId != null) {
+        q = q.eq('supplier_id', widget.supplierId!);
+      } else if (widget.dealId != null) {
+        q = q.eq('deal_id', widget.dealId!);
+      } else {
+        q = q.eq('contact_id', widget.contactId!);
+      }
       final rows = await q.order('created_at', ascending: false).limit(100);
       _rows = List<Map<String, dynamic>>.from(rows);
     } catch (_) {}
@@ -114,6 +128,8 @@ class TimelineState extends State<Timeline> {
         'tenant_id': _s.tenantId,
         'contact_id': widget.contactId,
         'deal_id': widget.dealId,
+        'supplier_id': widget.supplierId,
+        'shipment_id': widget.shipmentId,
         'kind': kind,
         'body': body.text.trim(),
         if (due != null) 'due_at': due!.toUtc().toIso8601String(),

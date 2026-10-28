@@ -213,7 +213,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
         ),
       ]),
       floatingActionButton: s.can('inv.product.manage')
-          ? FloatingActionButton(onPressed: () => _open(), child: const Icon(Icons.add))
+          ? FloatingActionButton(heroTag: null, onPressed: () => _open(), child: const Icon(Icons.add))
           : null,
     );
   }
