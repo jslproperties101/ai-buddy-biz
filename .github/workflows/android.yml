@@ -1,0 +1,83 @@
+name: Android APK
+
+# Builds the Ai buddy Biz APK on every push to main and publishes it on a
+# per-batch GitHub Release, so each batch has its own download link:
+#   https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-<x>/ai-buddy-biz-batch-<x>.apk
+#
+# Repo secrets needed (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL, SUPABASE_ANON_KEY
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  BATCH: b   # bump per batch (c, d, …) so earlier batch links stay available
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate Android platform files
+        run: flutter create --platforms=android --org com.aibuddybiz --project-name ai_buddy_biz .
+
+      - name: App name and permissions
+        run: |
+          M=android/app/src/main/AndroidManifest.xml
+          grep -q 'android.permission.INTERNET' "$M" || \
+            sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.CAMERA"/>\n    <application#' "$M"
+          sed -i 's#android:label="[^"]*"#android:label="Ai buddy Biz"#' "$M"
+          cat "$M"
+
+      - run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Unit tests
+        run: flutter test
+
+      - name: Build APK
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY"
+          cp build/app/outputs/flutter-apk/app-release.apk "ai-buddy-biz-batch-$BATCH.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-buddy-biz-batch-${{ env.BATCH }}
+          path: app/ai-buddy-biz-batch-${{ env.BATCH }}.apk
+
+      - name: Publish to batch release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: batch-${{ env.BATCH }}
+          name: Ai buddy Biz — Batch ${{ env.BATCH }}
+          prerelease: true
+          files: app/ai-buddy-biz-batch-${{ env.BATCH }}.apk
+          body: |
+            Test build for Batch ${{ env.BATCH }}. Install on Android (allow "install unknown apps").
+            Test checklist: Dropbox /Ai buddy Biz/Batch ${{ env.BATCH }}/
