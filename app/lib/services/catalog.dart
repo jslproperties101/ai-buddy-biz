@@ -13,6 +13,7 @@ class Variant {
   final double price;
   final double cost;
   final bool trackStock;
+  final String? taxCode;
   final List<BarcodeEntry> barcodes;
 
   Variant({
@@ -24,6 +25,7 @@ class Variant {
     required this.price,
     required this.cost,
     required this.trackStock,
+    this.taxCode,
     required this.barcodes,
   });
 
@@ -38,6 +40,7 @@ class Variant {
         'price': price,
         'cost': cost,
         'track_stock': trackStock,
+        'tax_code': taxCode,
         'barcodes': [for (final b in barcodes) b.toJson()],
       };
 
@@ -50,6 +53,7 @@ class Variant {
         price: (j['price'] as num).toDouble(),
         cost: (j['cost'] as num).toDouble(),
         trackStock: j['track_stock'] as bool? ?? true,
+        taxCode: j['tax_code'] as String?,
         barcodes: [for (final b in (j['barcodes'] as List? ?? [])) BarcodeEntry.fromJson(b as Map<String, dynamic>)],
       );
 }
@@ -95,7 +99,7 @@ class Catalog {
     final s = Session.instance;
     final rows = await s.db
         .from('product_variants')
-        .select('id, product_id, name, sku, price, cost, track_stock, active, products!inner(name, active), barcodes(code, symbology, pack_qty)')
+        .select('id, product_id, name, sku, price, cost, track_stock, active, products!inner(name, active, tax_code), barcodes(code, symbology, pack_qty)')
         .eq('tenant_id', s.tenantId!)
         .eq('active', true)
         .eq('products.active', true)
@@ -111,6 +115,7 @@ class Catalog {
           price: (r['price'] as num).toDouble(),
           cost: (r['cost'] as num).toDouble(),
           trackStock: r['track_stock'] as bool,
+          taxCode: r['products']['tax_code'] as String?,
           barcodes: [for (final b in (r['barcodes'] as List)) BarcodeEntry.fromJson(b as Map<String, dynamic>)],
         )
     ];

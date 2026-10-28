@@ -32,6 +32,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   String _kind = 'stock';
   String _unit = 'pcs';
   String? _categoryId;
+  String? _taxCode; // null = business default
   List<Map<String, dynamic>> _categories = [];
   final List<_VariantForm> _variants = [];
   final List<String> _removed = [];
@@ -65,6 +66,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
         _kind = p['kind'] as String;
         _unit = p['unit'] as String;
         _categoryId = p['category_id'] as String?;
+        _taxCode = p['tax_code'] as String?;
         _active = p['active'] as bool;
         final stock = _s.outlet == null
             ? <dynamic>[]
@@ -159,6 +161,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
         'kind': _kind,
         'unit': _unit,
         'category_id': _categoryId,
+        'tax_code': _taxCode,
         'active': _active,
       };
       final String pid;
@@ -318,6 +321,19 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
                   ),
                 ),
               ]),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String?>(
+                value: _s.taxTable.containsKey(_taxCode) ? _taxCode : null,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Tax', border: OutlineInputBorder()),
+                items: [
+                  DropdownMenuItem<String?>(
+                      value: null, child: Text('Business default (${_s.taxFor(null).name})')),
+                  for (final c in (_s.taxTable.keys.toList()..sort()))
+                    DropdownMenuItem<String?>(value: c, child: Text(_s.taxTable[c]!.name)),
+                ],
+                onChanged: (v) => setState(() => _taxCode = v),
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: _description,

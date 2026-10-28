@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../services/catalog.dart';
 import '../services/sales_queue.dart';
 import '../services/session.dart';
+import 'invoices_screen.dart';
+import 'more_screen.dart';
 import 'pos_screen.dart';
 import 'products_screen.dart';
 import 'stock_screen.dart';
@@ -36,6 +38,8 @@ class _HomeScreenState extends State<HomeScreen> {
     var online = true;
     try {
       await Catalog.instance.refresh();
+      await Session.instance.refreshTaxTable();
+      await Session.instance.refreshShift();
     } catch (_) {
       online = false;
     }
@@ -54,21 +58,25 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _refreshPending() async {
+    _pending = (await SalesQueue.instance.pending()).length;
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = Session.instance;
     final tabs = <(String, IconData, Widget)>[
-      if (s.can('pos.sale.create')) ('Sell', Icons.point_of_sale, PosScreen(onSaleDone: () => _refreshPending())),
-      if (s.can('inv.product.view')) ('Products', Icons.inventory_2_outlined, ProductsScreen(onChanged: () => _sync(silent: true))),
+      if (s.can('pos.sale.create')) ('Sell', Icons.point_of_sale, PosScreen(onSaleDone: _refreshPending)),
+      if (s.can('inv.product.view'))
+        ('Products', Icons.inventory_2_outlined, ProductsScreen(onChanged: () => _sync(silent: true))),
       if (s.can('inv.product.view')) ('Stock', Icons.warehouse_outlined, const StockScreen()),
+      if (s.can('fin.invoice.view')) ('Invoices', Icons.receipt_long_outlined, const InvoicesScreen()),
+      ('More', Icons.menu, MoreScreen(onOutletChanged: () => _sync(silent: true))),
     ];
-    if (tabs.isEmpty) {
-      return Scaffold(
-        appBar: AppBar(title: Text(s.tenantName)),
-        body: const Center(child: Text('Your role has no POS or stock access yet. Ask the owner.')),
-      );
-    }
     if (_tab >= tabs.length) _tab = 0;
+
+    final noShift = s.can('pos.shift.manage') && s.openShiftId == null && tabs[_tab].$1 == 'Sell';
 
     return Scaffold(
       appBar: AppBar(
@@ -88,86 +96,35 @@ class _HomeScreenState extends State<HomeScreen> {
                   : const Icon(Icons.sync),
             ),
           ),
-          PopupMenuButton<String>(
-            onSelected: (v) async {
-              if (v == 'outlet') await _pickOutlet();
-              if (v == 'tax') await _editTax();
-              if (v == 'logout') await s.signOut();
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'outlet', child: Text('Switch outlet')),
-              if (s.can('core.module.manage')) const PopupMenuItem(value: 'tax', child: Text('Default tax rate')),
-              const PopupMenuItem(value: 'logout', child: Text('Sign out')),
-            ],
-          ),
         ],
+        bottom: noShift
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(36),
+                child: Material(
+                  color: Theme.of(context).colorScheme.tertiaryContainer,
+                  child: InkWell(
+                    onTap: () => setState(() => _tab = tabs.length - 1),
+                    child: const SizedBox(
+                      height: 36,
+                      child: Center(child: Text('No shift open — tap More → Shift to open one')),
+                    ),
+                  ),
+                ),
+              )
+            : null,
       ),
       body: IndexedStack(index: _tab, children: [for (final t in tabs) t.$3]),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
+        onDestinationSelected: (i) async {
+          setState(() => _tab = i);
+          if (tabs[i].$1 == 'Sell') {
+            await Session.instance.refreshShift();
+            if (mounted) setState(() {});
+          }
+        },
         destinations: [for (final t in tabs) NavigationDestination(icon: Icon(t.$2), label: t.$1)],
       ),
     );
-  }
-
-  Future<void> _refreshPending() async {
-    _pending = (await SalesQueue.instance.pending()).length;
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _pickOutlet() async {
-    final s = Session.instance;
-    final o = await showModalBottomSheet<Outlet>(
-      context: context,
-      builder: (_) => SafeArea(
-        child: ListView(shrinkWrap: true, children: [
-          for (final o in s.outlets)
-            ListTile(
-              title: Text(o.name),
-              subtitle: Text(o.kind),
-              trailing: o.id == s.outlet?.id ? const Icon(Icons.check) : null,
-              onTap: () => Navigator.pop(context, o),
-            ),
-        ]),
-      ),
-    );
-    if (o != null) {
-      await s.selectOutlet(o);
-      setState(() {});
-    }
-  }
-
-  Future<void> _editTax() async {
-    final s = Session.instance;
-    final c = TextEditingController(text: (s.defaultTaxRate * 100).toStringAsFixed(2));
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Default tax rate'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-            controller: c,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(suffixText: '%', labelText: 'e.g. 6 for SST'),
-          ),
-          const SizedBox(height: 8),
-          const Text('Zone-based tax rules come in the accounting & tax update.', style: TextStyle(fontSize: 12)),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
-        ],
-      ),
-    );
-    if (ok == true) {
-      final v = double.tryParse(c.text) ?? 0;
-      try {
-        await s.saveTaxRate(v / 100);
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tax rate saved')));
-      } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not save: $e')));
-      }
-    }
   }
 }

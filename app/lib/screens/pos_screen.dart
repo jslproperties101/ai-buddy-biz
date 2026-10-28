@@ -16,6 +16,17 @@ class CartLine {
   CartLine(this.variant, this.qty) : discount = 0;
   double get gross => variant.price * qty;
   double get net => gross - discount;
+
+  // Mirrors the server's complete_sale maths so the screen total matches the receipt.
+  TaxRate get tax => Session.instance.taxFor(variant.taxCode);
+  double get netRounded => (net * 100).roundToDouble() / 100;
+  double get taxAmount {
+    final t = tax;
+    final v = t.inclusive ? netRounded - netRounded / (1 + t.rate) : netRounded * t.rate;
+    return (v * 100).roundToDouble() / 100;
+  }
+
+  double get lineTotal => tax.inclusive ? netRounded : netRounded + taxAmount;
 }
 
 class PosScreen extends StatefulWidget {
@@ -31,12 +42,12 @@ class _PosScreenState extends State<PosScreen> {
   bool _paying = false;
 
   NumberFormat get _money => NumberFormat.currency(symbol: '${Session.instance.currency} ');
-  double get _rate => Session.instance.defaultTaxRate;
   double get _subtotal => _cart.fold<double>(0.0, (a, l) => a + l.gross);
   double get _discount => _cart.fold<double>(0.0, (a, l) => a + l.discount);
   double _round(double v) => (v * 100).roundToDouble() / 100;
-  double get _tax => _cart.fold<double>(0.0, (a, l) => a + _round(l.net * _rate));
-  double get _total => _round(_subtotal - _discount + _tax);
+  double get _tax => _round(_cart.fold<double>(0.0, (a, l) => a + l.taxAmount));
+  double get _total => _round(_cart.fold<double>(0.0, (a, l) => a + l.lineTotal));
+  bool get _inclusive => _cart.isNotEmpty && _cart.every((l) => l.tax.inclusive);
 
   void _add(Variant v, [double qty = 1]) {
     setState(() {
@@ -126,6 +137,7 @@ class _PosScreenState extends State<PosScreen> {
     final payload = {
       'client_sale_id': const Uuid().v4(),
       'outlet_id': s.outlet!.id,
+      if (s.openShiftId != null) 'shift_id': s.openShiftId,
       'currency': s.currency,
       'sold_at': DateTime.now().toUtc().toIso8601String(),
       'lines': [
@@ -135,7 +147,6 @@ class _PosScreenState extends State<PosScreen> {
             'qty': l.qty,
             'unit_price': l.variant.price,
             'discount': l.discount,
-            'tax_rate': _rate,
           }
       ],
       'payments': [
@@ -282,7 +293,7 @@ class _PosScreenState extends State<PosScreen> {
             child: Column(children: [
               _row('Subtotal', _subtotal),
               if (_discount > 0) _row('Discount', -_discount),
-              if (_rate > 0) _row('Tax ${(_rate * 100).toStringAsFixed(_rate * 100 % 1 == 0 ? 0 : 2)}%', _tax),
+              if (_tax > 0) _row(_inclusive ? 'Includes tax' : 'Tax', _tax),
               const SizedBox(height: 8),
               Row(children: [
                 if (_cart.isNotEmpty)
