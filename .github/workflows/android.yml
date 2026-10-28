@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 env:
-  BATCH: c   # bump per batch (d, e, …) so earlier batch links stay available
+  BATCH: d   # bump per batch (d, e, …) so earlier batch links stay available
 
 jobs:
   build:
@@ -46,6 +46,13 @@ jobs:
           grep -q 'android.permission.INTERNET' "$M" || \
             sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.CAMERA"/>\n    <application#' "$M"
           sed -i 's#android:label="[^"]*"#android:label="Ai buddy Biz"#' "$M"
+          # Let the app open phone, WhatsApp, email and web links (Android 11+ package visibility)
+          INTENTS='    <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent>\n    <intent><action android:name="android.intent.action.DIAL"/><data android:scheme="tel"/></intent>\n    <intent><action android:name="android.intent.action.SENDTO"/><data android:scheme="mailto"/></intent>'
+          if grep -q '<queries>' "$M"; then
+            sed -i "s#<queries>#<queries>\n$INTENTS#" "$M"
+          else
+            sed -i "s#</manifest>#  <queries>\n$INTENTS\n  </queries>\n</manifest>#" "$M"
+          fi
           cat "$M"
 
       - run: flutter pub get

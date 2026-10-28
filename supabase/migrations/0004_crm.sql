@@ -1,104 +1,94 @@
--- Ai buddy Biz — Batch D: CRM and leads
--- Customer profiles with consent, pipeline & deals, activities/tasks, lead scoring,
--- loyalty points (earn on sale, redeem at POS), segments, campaigns, web lead forms.
+-- Ai buddy Biz — Batch D: CRM & leads
+-- Contacts profile, sales pipeline (deals), activities & tasks, lead scoring,
+-- web lead capture, loyalty points (earn/redeem at POS), segments & campaigns
+-- with a consent-aware outbound message queue (WhatsApp / email / SMS).
 -- Depends on 0001–0003.
 
--- ===== Permissions =====
+-- ===== Permissions & roles =====
 insert into public.permissions (code, module, description) values
-  ('crm.contact.create','CRM','Add customers (e.g. at the POS)'),
-  ('crm.deal.manage','CRM','Manage pipeline and deals'),
+  ('crm.contact.create','CRM','Add new customers (e.g. at the till)'),
+  ('crm.deal.view','CRM','View leads and the sales pipeline'),
+  ('crm.deal.manage','CRM','Create/move/close leads, log activities'),
   ('crm.campaign.manage','CRM','Create and send campaigns'),
-  ('crm.loyalty.manage','CRM','Loyalty settings and point adjustments'),
-  ('crm.form.manage','CRM','Manage web lead forms');
+  ('crm.loyalty.adjust','CRM','Manually adjust loyalty points'),
+  ('crm.settings.manage','CRM','Pipelines, loyalty rules, lead form, messaging keys');
+
+insert into public.roles (tenant_id, name, is_builtin) values (null, 'Sales', true);
 
 insert into public.role_permissions (role_id, permission_code)
-select r.id, p.code from public.roles r cross join public.permissions p
-where r.tenant_id is null and r.name in ('Owner','Admin','Manager')
-  and p.module = 'CRM'
+select r.id, p.code from public.roles r join public.permissions p on p.code like 'crm.%'
+where r.tenant_id is null and r.name in ('Owner','Admin')
 on conflict do nothing;
 
 insert into public.role_permissions (role_id, permission_code)
-select r.id, 'crm.contact.create' from public.roles r
-where r.tenant_id is null and r.name = 'Cashier'
+select r.id, c from public.roles r,
+  unnest(array['crm.contact.create','crm.deal.view','crm.deal.manage','crm.campaign.manage','crm.loyalty.adjust']) c
+where r.tenant_id is null and r.name = 'Manager'
 on conflict do nothing;
 
 insert into public.role_permissions (role_id, permission_code)
-select r.id, 'crm.contact.view' from public.roles r
-where r.tenant_id is null and r.name = 'Accountant'
+select r.id, c from public.roles r,
+  unnest(array['crm.contact.view','crm.contact.manage','crm.contact.create','crm.deal.view','crm.deal.manage',
+               'fin.invoice.view','fin.invoice.manage','inv.product.view']) c
+where r.tenant_id is null and r.name = 'Sales'
 on conflict do nothing;
 
--- ===== Contacts: CRM fields =====
-create or replace function public.normalize_phone(p_phone text, p_country char(2))
-returns text language sql immutable as $$
-  select case
-    when p_phone is null or regexp_replace(p_phone, '\D', '', 'g') = '' then null
-    when p_phone ~ '^\s*\+' then regexp_replace(p_phone, '\D', '', 'g')
-    when regexp_replace(p_phone, '\D', '', 'g') ~ '^0' then
-      case p_country when 'MY' then '60' when 'SG' then '65' when 'ID' then '62' when 'TH' then '66'
-                     when 'PH' then '63' when 'VN' then '84' when 'IN' then '91' when 'GB' then '44'
-                     when 'AU' then '61' when 'NZ' then '64' else '' end
-      || substr(regexp_replace(p_phone, '\D', '', 'g'), 2)
-    else regexp_replace(p_phone, '\D', '', 'g')
-  end;
-$$;
+insert into public.role_permissions (role_id, permission_code)
+select r.id, 'crm.contact.create' from public.roles r where r.tenant_id is null and r.name = 'Cashier'
+on conflict do nothing;
 
+-- ===== Contact profile =====
 alter table public.contacts
-  add column lifecycle text not null default 'customer' check (lifecycle in ('lead','prospect','customer','inactive')),
-  add column source text,                        -- walk_in, web_form, referral, whatsapp, facebook, event, import…
-  add column owner_id uuid references auth.users(id) on delete set null,
+  add column lifecycle text not null default 'lead' check (lifecycle in ('lead','prospect','customer','inactive')),
+  add column source text,                               -- walk-in, website, facebook, referral, import…
+  add column owner_id uuid references auth.users(id),
   add column tags text[] not null default '{}',
-  add column score int not null default 0,
-  add column phone_norm text,                    -- digits with country code, for WhatsApp and de-duplication
-  add column whatsapp_opt_in boolean not null default false,
-  add column email_opt_in boolean not null default false,
+  add column birthday date,
+  add column marketing_consent boolean not null default false,
   add column consent_at timestamptz,
   add column consent_source text,
-  add column birthday date,
+  add column loyalty_points numeric(14,2) not null default 0,
+  add column total_spent numeric(14,2) not null default 0,
+  add column visits int not null default 0,
+  add column last_purchase_at timestamptz,
   add column notes text,
-  add column last_contacted_at timestamptz;
+  add column updated_at timestamptz not null default now();
 
-create unique index contacts_phone_unique on public.contacts (tenant_id, phone_norm) where phone_norm is not null;
-create index contacts_tags on public.contacts using gin (tags);
+create index on public.contacts (tenant_id, phone);
+create index on public.contacts (tenant_id, lower(email));
+create index on public.contacts using gin (tags);
 
--- ===== Lead scoring =====
-create table public.lead_score_rules (
-  id uuid primary key default gen_random_uuid(),
-  tenant_id uuid not null references public.tenants(id) on delete cascade,
-  kind text not null check (kind in ('source','tag','lifecycle','activity','spend_over','purchased_within_days','open_deal')),
-  match text,                                    -- e.g. 'referral', 'vip', 'meeting', '1000', '30'
-  points int not null,
-  unique (tenant_id, kind, match)
-);
+-- Normalise phone numbers so "+60 12-345 6789" and "60123456789" match
+create or replace function public.norm_phone(p text)
+returns text language sql immutable as $$
+  select nullif(regexp_replace(coalesce(p,''), '[^0-9]', '', 'g'), '');
+$$;
 
-create or replace function public.ensure_crm_defaults(p_tenant uuid)
-returns void language plpgsql security definer set search_path = public as $$
-declare pid uuid;
+create or replace function public.contact_before()
+returns trigger language plpgsql as $$
 begin
-  insert into lead_score_rules (tenant_id, kind, match, points) values
-    (p_tenant,'source','referral',20), (p_tenant,'source','web_form',10), (p_tenant,'source','whatsapp',10),
-    (p_tenant,'activity','meeting',15), (p_tenant,'activity','call',5), (p_tenant,'activity','whatsapp',5),
-    (p_tenant,'activity','email',3), (p_tenant,'tag','vip',25), (p_tenant,'lifecycle','prospect',10),
-    (p_tenant,'spend_over','1000',20), (p_tenant,'purchased_within_days','30',10), (p_tenant,'open_deal',null,15)
-  on conflict do nothing;
-
-  if not exists (select 1 from pipelines where tenant_id = p_tenant) then
-    insert into pipelines (tenant_id, name, is_default) values (p_tenant, 'Sales', true) returning id into pid;
-    insert into pipeline_stages (tenant_id, pipeline_id, name, sort_order, probability, kind) values
-      (p_tenant, pid, 'New lead', 1, 10, 'open'), (p_tenant, pid, 'Contacted', 2, 20, 'open'),
-      (p_tenant, pid, 'Qualified', 3, 40, 'open'), (p_tenant, pid, 'Proposal sent', 4, 60, 'open'),
-      (p_tenant, pid, 'Negotiation', 5, 80, 'open'), (p_tenant, pid, 'Won', 6, 100, 'won'),
-      (p_tenant, pid, 'Lost', 7, 0, 'lost');
+  new.updated_at := now();
+  if new.marketing_consent and (tg_op = 'INSERT' or not old.marketing_consent) then
+    new.consent_at := coalesce(new.consent_at, now());
   end if;
-
-  insert into loyalty_settings (tenant_id) values (p_tenant) on conflict do nothing;
+  if not new.marketing_consent then new.consent_at := null; end if;
+  new.tags := coalesce((select array_agg(distinct lower(trim(t))) from unnest(new.tags) t where trim(t) <> ''), '{}');
+  return new;
 end $$;
+create trigger trg_contact_before before insert or update on public.contacts
+  for each row execute function public.contact_before();
 
--- ===== Pipeline & deals =====
+-- Cashiers may add customers but not edit or delete them
+create policy contacts_create on public.contacts for insert
+  with check (has_perm(tenant_id, 'crm.contact.create'));
+
+-- ===== Pipelines =====
 create table public.pipelines (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   name text not null,
-  is_default boolean not null default false
+  is_default boolean not null default false,
+  created_at timestamptz not null default now()
 );
 
 create table public.pipeline_stages (
@@ -111,6 +101,25 @@ create table public.pipeline_stages (
   kind text not null default 'open' check (kind in ('open','won','lost'))
 );
 
+create or replace function public.ensure_pipeline(p_tenant uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare pid uuid;
+begin
+  select id into pid from pipelines where tenant_id = p_tenant and is_default;
+  if pid is not null then return pid; end if;
+  insert into pipelines (tenant_id, name, is_default) values (p_tenant, 'Sales', true) returning id into pid;
+  insert into pipeline_stages (tenant_id, pipeline_id, name, sort_order, probability, kind) values
+    (p_tenant, pid, 'New', 1, 10, 'open'),
+    (p_tenant, pid, 'Contacted', 2, 25, 'open'),
+    (p_tenant, pid, 'Qualified', 3, 50, 'open'),
+    (p_tenant, pid, 'Proposal', 4, 70, 'open'),
+    (p_tenant, pid, 'Negotiation', 5, 85, 'open'),
+    (p_tenant, pid, 'Won', 6, 100, 'won'),
+    (p_tenant, pid, 'Lost', 7, 0, 'lost');
+  return pid;
+end $$;
+
+-- ===== Deals (leads in the pipeline) =====
 create table public.deals (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
@@ -119,55 +128,41 @@ create table public.deals (
   contact_id uuid references public.contacts(id) on delete set null,
   title text not null,
   value numeric(14,2) not null default 0 check (value >= 0),
-  currency char(3),
-  owner_id uuid references auth.users(id) on delete set null default auth.uid(),
+  currency char(3) not null,
+  source text,
+  owner_id uuid references auth.users(id) default auth.uid(),
   expected_close date,
   status text not null default 'open' check (status in ('open','won','lost')),
-  closed_at timestamptz,
   lost_reason text,
-  source text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  score int not null default 0,
+  score_reasons jsonb not null default '[]',
+  stage_changed_at timestamptz not null default now(),
+  closed_at timestamptz,
+  custom_values jsonb not null default '{}',
+  created_at timestamptz not null default now()
 );
 create index on public.deals (tenant_id, status, stage_id);
+create index on public.deals (contact_id);
 
-create or replace function public.deals_before()
+-- Status follows the stage kind; contact lifecycle moves with it
+create or replace function public.deal_before()
 returns trigger language plpgsql security definer set search_path = public as $$
 declare st pipeline_stages;
 begin
   select * into st from pipeline_stages where id = new.stage_id;
-  if st.pipeline_id <> new.pipeline_id or st.tenant_id <> new.tenant_id then raise exception 'Stage does not belong to this pipeline'; end if;
-  new.status := st.kind;
-  new.closed_at := case when st.kind = 'open' then null else coalesce(case when tg_op = 'UPDATE' and old.status = st.kind then old.closed_at end, now()) end;
-  if st.kind <> 'lost' then new.lost_reason := null; end if;
-  new.updated_at := now();
-  if new.currency is null then new.currency := (select base_currency from tenants where id = new.tenant_id); end if;
+  if st.pipeline_id <> new.pipeline_id or st.tenant_id <> new.tenant_id then
+    raise exception 'Stage does not belong to this pipeline';
+  end if;
+  if tg_op = 'INSERT' or new.stage_id <> old.stage_id then
+    new.stage_changed_at := now();
+    new.status := st.kind;
+    new.closed_at := case when st.kind = 'open' then null else now() end;
+  end if;
+  if new.status <> 'lost' then new.lost_reason := null; end if;
   return new;
 end $$;
-create trigger trg_deals_before before insert or update on public.deals
-  for each row execute function public.deals_before();
-
--- Moving a deal logs an activity; winning makes the contact a customer; scores refresh
-create or replace function public.deals_after()
-returns trigger language plpgsql security definer set search_path = public as $$
-begin
-  if new.contact_id is not null then
-    if tg_op = 'INSERT' or old.stage_id <> new.stage_id then
-      insert into activities (tenant_id, contact_id, deal_id, kind, subject, created_by)
-      values (new.tenant_id, new.contact_id, new.id, 'system',
-              'Deal "' || new.title || '" → ' || (select name from pipeline_stages where id = new.stage_id), auth.uid());
-    end if;
-    if new.status = 'won' then
-      update contacts set lifecycle = 'customer' where id = new.contact_id and lifecycle in ('lead','prospect');
-    elsif new.status = 'open' then
-      update contacts set lifecycle = 'prospect' where id = new.contact_id and lifecycle = 'lead';
-    end if;
-    update contacts set score = score where id = new.contact_id;   -- recompute
-  end if;
-  return null;
-end $$;
-create trigger trg_deals_after after insert or update on public.deals
-  for each row execute function public.deals_after();
+create trigger trg_deal_before before insert or update on public.deals
+  for each row execute function public.deal_before();
 
 -- ===== Activities & tasks =====
 create table public.activities (
@@ -175,101 +170,306 @@ create table public.activities (
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   contact_id uuid references public.contacts(id) on delete cascade,
   deal_id uuid references public.deals(id) on delete cascade,
-  kind text not null check (kind in ('note','call','whatsapp','email','sms','meeting','visit','task','system')),
-  subject text not null,
+  kind text not null check (kind in ('note','call','whatsapp','email','meeting','task','visit','system')),
   body text,
-  due_at timestamptz,                            -- tasks
+  due_at timestamptz,                                   -- tasks/meetings
   done_at timestamptz,
-  assigned_to uuid references auth.users(id) on delete set null,
+  owner_id uuid references auth.users(id) default auth.uid(),
   created_by uuid default auth.uid(),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  check (contact_id is not null or deal_id is not null)
 );
 create index on public.activities (tenant_id, contact_id, created_at desc);
-create index on public.activities (tenant_id, assigned_to, done_at, due_at) where kind = 'task';
+create index on public.activities (tenant_id, deal_id, created_at desc);
+create index on public.activities (tenant_id, owner_id, due_at) where kind in ('task','meeting') and done_at is null;
 
-create or replace function public.activities_after()
+-- ===== Lead scoring (rules; AI scoring is layered on in the AI batch) =====
+create or replace function public.score_deal(p_deal uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  d deals; c contacts; st pipeline_stages;
+  s int := 0; r jsonb := '[]';
+  n_recent int; n_total int; last_touch timestamptz; avg_value numeric;
+begin
+  select * into d from deals where id = p_deal;
+  if not found then return; end if;
+  select * into st from pipeline_stages where id = d.stage_id;
+  if d.status <> 'open' then
+    update deals set score = case when d.status = 'won' then 100 else 0 end, score_reasons = '[]' where id = d.id;
+    return;
+  end if;
+  select * into c from contacts where id = d.contact_id;
+
+  s := s + st.probability * 3 / 10;  r := r || jsonb_build_object('stage', st.probability * 3 / 10);
+  if c.phone is not null then s := s + 8;  r := r || '{"has_phone":8}'; end if;
+  if c.email is not null then s := s + 4;  r := r || '{"has_email":4}'; end if;
+  if c.lifecycle = 'customer' then s := s + 12; r := r || '{"existing_customer":12}'; end if;
+  if c.marketing_consent then s := s + 3; r := r || '{"consented":3}'; end if;
+
+  select count(*) filter (where created_at > now() - interval '7 days'), count(*), max(created_at)
+    into n_recent, n_total, last_touch
+  from activities where deal_id = d.id and kind <> 'system';
+  if n_recent > 0 then s := s + least(20, n_recent * 7); r := r || jsonb_build_object('recent_activity', least(20, n_recent * 7)); end if;
+  if n_total > 0 then s := s + least(10, n_total * 2); r := r || jsonb_build_object('engagement', least(10, n_total * 2)); end if;
+
+  select avg(value) into avg_value from deals where tenant_id = d.tenant_id and value > 0;
+  if d.value > 0 and avg_value > 0 and d.value >= avg_value then s := s + 8; r := r || '{"above_avg_value":8}'; end if;
+  if d.expected_close is not null and d.expected_close <= current_date + 30 then s := s + 5; r := r || '{"closing_soon":5}'; end if;
+
+  -- going cold
+  if coalesce(last_touch, d.created_at) < now() - interval '14 days' then s := s - 15; r := r || '{"no_contact_14d":-15}'; end if;
+  if d.expected_close is not null and d.expected_close < current_date then s := s - 10; r := r || '{"past_close_date":-10}'; end if;
+
+  update deals set score = greatest(0, least(100, s)), score_reasons = r where id = d.id;
+end $$;
+
+create or replace function public.rescore_deals(p_tenant uuid)
+returns int language plpgsql security definer set search_path = public as $$
+declare d record; n int := 0;
+begin
+  if not has_perm(p_tenant, 'crm.deal.view') then raise exception 'Not allowed'; end if;
+  for d in select id from deals where tenant_id = p_tenant and status = 'open' loop
+    perform score_deal(d.id); n := n + 1;
+  end loop;
+  return n;
+end $$;
+
+create or replace function public.deal_after()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if new.contact_id is not null and new.kind not in ('task','system','note') then
-    update contacts set last_contacted_at = greatest(coalesce(last_contacted_at, new.created_at), new.created_at)
-    where id = new.contact_id;
-  elsif new.contact_id is not null and new.kind <> 'system' then
-    update contacts set score = score where id = new.contact_id;
+  if pg_trigger_depth() > 1 then return null; end if;
+  perform score_deal(new.id);
+  if tg_op = 'UPDATE' and new.stage_id <> old.stage_id then
+    insert into activities (tenant_id, contact_id, deal_id, kind, body)
+    values (new.tenant_id, new.contact_id, new.id, 'system',
+            'Moved to ' || (select name from pipeline_stages where id = new.stage_id)
+            || case when new.lost_reason is not null then ' — ' || new.lost_reason else '' end);
+  end if;
+  if new.status = 'won' and new.contact_id is not null then
+    update contacts set lifecycle = 'customer' where id = new.contact_id and lifecycle in ('lead','prospect');
+  elsif new.status = 'open' and new.contact_id is not null then
+    update contacts set lifecycle = 'prospect' where id = new.contact_id and lifecycle = 'lead'
+      and (select probability from pipeline_stages where id = new.stage_id) >= 50;
   end if;
   return null;
 end $$;
-create trigger trg_activities_after after insert on public.activities
-  for each row execute function public.activities_after();
+create trigger trg_deal_after after insert or update of stage_id, value, expected_close, contact_id on public.deals
+  for each row execute function public.deal_after();
 
--- ===== Lead score calculation (needs deals + activities) =====
-create or replace function public.compute_lead_score(p_contact uuid, p_tenant uuid, p_source text, p_tags text[], p_lifecycle text)
-returns int language sql stable security definer set search_path = public as $$
-  with spend as (
-    select coalesce(sum(total),0) as amt, max(sold_at) as last_at
-    from sales where customer_id = p_contact and status = 'completed'
-  ), acts as (
-    select distinct kind from activities where contact_id = p_contact and kind <> 'task' and created_at > now() - interval '90 days'
-  )
-  select coalesce(sum(r.points),0)::int from lead_score_rules r
-  where r.tenant_id = p_tenant and (
-       (r.kind = 'source' and r.match = p_source)
-    or (r.kind = 'tag' and r.match = any(p_tags))
-    or (r.kind = 'lifecycle' and r.match = p_lifecycle)
-    or (r.kind = 'activity' and r.match in (select kind from acts))
-    or (r.kind = 'spend_over' and (select amt from spend) >= r.match::numeric)
-    or (r.kind = 'purchased_within_days' and (select last_at from spend) > now() - (r.match || ' days')::interval)
-    or (r.kind = 'open_deal' and exists (select 1 from deals d where d.contact_id = p_contact and d.status = 'open'))
-  );
-$$;
-
-create or replace function public.contacts_before()
+create or replace function public.activity_after()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  new.phone_norm := normalize_phone(new.phone, (select country_code from tenants where id = new.tenant_id));
-  if new.tags is null then new.tags := '{}'; end if;
-  new.tags := array(select distinct lower(trim(t)) from unnest(new.tags) t where trim(t) <> '');
-  if (new.whatsapp_opt_in or new.email_opt_in) and new.consent_at is null then new.consent_at := now(); end if;
-  if tg_op = 'INSERT' then
-    perform ensure_crm_defaults(new.tenant_id);
-    new.score := coalesce((select sum(points) from lead_score_rules r where r.tenant_id = new.tenant_id and (
-                   (r.kind = 'source' and r.match = new.source) or (r.kind = 'tag' and r.match = any(new.tags))
-                   or (r.kind = 'lifecycle' and r.match = new.lifecycle))), 0);
-  else
-    new.score := compute_lead_score(new.id, new.tenant_id, new.source, new.tags, new.lifecycle);
-  end if;
-  return new;
+  if new.deal_id is not null and new.kind <> 'system' then perform score_deal(new.deal_id); end if;
+  return null;
 end $$;
-create trigger trg_contacts_before before insert or update on public.contacts
-  for each row execute function public.contacts_before();
+create trigger trg_activity_after after insert on public.activities
+  for each row execute function public.activity_after();
+
+-- ===== CRM settings (per tenant) =====
+-- Stored in tenant_modules where module = 'CRM':
+--   {"loyalty":{"enabled":true,"points_per_unit":1,"point_value":0.01,"min_redeem":100},
+--    "lead_form_key":"…"}
+create or replace function public.crm_settings(p_tenant uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare s jsonb;
+begin
+  insert into tenant_modules (tenant_id, module, settings)
+  values (p_tenant, 'CRM', jsonb_build_object(
+    'loyalty', jsonb_build_object('enabled', true, 'points_per_unit', 1, 'point_value', 0.01, 'min_redeem', 100),
+    'lead_form_key', replace(gen_random_uuid()::text, '-', '')))
+  on conflict (tenant_id, module) do nothing;
+  select settings into s from tenant_modules where tenant_id = p_tenant and module = 'CRM';
+  if s->'loyalty' is null or s->>'lead_form_key' is null then
+    s := jsonb_build_object(
+      'loyalty', coalesce(s->'loyalty', jsonb_build_object('enabled', true, 'points_per_unit', 1, 'point_value', 0.01, 'min_redeem', 100)),
+      'lead_form_key', coalesce(s->>'lead_form_key', replace(gen_random_uuid()::text, '-', ''))) || s;
+    update tenant_modules set settings = s where tenant_id = p_tenant and module = 'CRM';
+  end if;
+  return s;
+end $$;
+
+create or replace function public.update_crm_settings(p_tenant uuid, p_settings jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare cur jsonb; lo jsonb;
+begin
+  if not has_perm(p_tenant, 'crm.settings.manage') then raise exception 'Not allowed'; end if;
+  cur := crm_settings(p_tenant);
+  lo := coalesce(cur->'loyalty','{}') || coalesce(p_settings->'loyalty','{}');
+  if (lo->>'points_per_unit')::numeric < 0 or (lo->>'point_value')::numeric < 0 or (lo->>'min_redeem')::numeric < 0 then
+    raise exception 'Loyalty values cannot be negative';
+  end if;
+  cur := jsonb_set(cur, '{loyalty}', lo);
+  if (p_settings->>'rotate_lead_form_key')::boolean then
+    cur := jsonb_set(cur, '{lead_form_key}', to_jsonb(replace(gen_random_uuid()::text, '-', '')));
+  end if;
+  update tenant_modules set settings = cur where tenant_id = p_tenant and module = 'CRM';
+  return cur;
+end $$;
+
+-- Readable CRM settings for members (the lead form key only for settings managers)
+create or replace function public.get_crm_settings(p_tenant uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare s jsonb;
+begin
+  if not is_member(p_tenant) then raise exception 'Not allowed'; end if;
+  s := crm_settings(p_tenant);
+  if not has_perm(p_tenant, 'crm.settings.manage') then s := s - 'lead_form_key'; end if;
+  return s;
+end $$;
+
+-- ===== Web lead capture (callable without login using the form key) =====
+create table public.lead_capture_log (
+  id bigint generated always as identity primary key,
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  at timestamptz not null default now()
+);
+create index on public.lead_capture_log (tenant_id, at);
+
+create or replace function public.capture_lead(p_form_key text, p jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  t uuid; cid uuid; did uuid; pid uuid; sid uuid;
+  v_name text := left(trim(coalesce(p->>'name','')), 120);
+  v_phone text := left(trim(coalesce(p->>'phone','')), 40);
+  v_email text := lower(left(trim(coalesce(p->>'email','')), 160));
+  v_msg text := left(coalesce(p->>'message',''), 2000);
+  v_source text := left(coalesce(nullif(p->>'source',''), 'website'), 60);
+  v_consent boolean := coalesce((p->>'marketing_consent')::boolean, false);
+begin
+  select tenant_id into t from tenant_modules where module = 'CRM' and settings->>'lead_form_key' = p_form_key;
+  if t is null or length(coalesce(p_form_key,'')) < 16 then raise exception 'Invalid form'; end if;
+  if v_name = '' or (v_phone = '' and v_email = '') then raise exception 'Name and phone or email are required'; end if;
+  if v_email <> '' and v_email !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'Invalid email'; end if;
+  if (select count(*) from lead_capture_log where tenant_id = t and at > now() - interval '1 hour') >= 200 then
+    raise exception 'Too many submissions, try later';
+  end if;
+  insert into lead_capture_log (tenant_id) values (t);
+
+  -- de-duplicate by phone or email
+  select id into cid from contacts
+  where tenant_id = t and ((v_phone <> '' and norm_phone(phone) = norm_phone(v_phone)) or (v_email <> '' and lower(email) = v_email))
+  order by created_at limit 1;
+  if cid is null then
+    insert into contacts (tenant_id, kind, name, phone, email, source, lifecycle, marketing_consent, consent_source)
+    values (t, 'customer', v_name, nullif(v_phone,''), nullif(v_email,''), v_source, 'lead', v_consent,
+            case when v_consent then 'web form' end)
+    returning id into cid;
+  elsif v_consent then
+    update contacts set marketing_consent = true, consent_source = 'web form' where id = cid and not marketing_consent;
+  end if;
+
+  pid := ensure_pipeline(t);
+  select id into sid from pipeline_stages where pipeline_id = pid and kind = 'open' order by sort_order limit 1;
+  insert into deals (tenant_id, pipeline_id, stage_id, contact_id, title, value, currency, source, owner_id)
+  values (t, pid, sid, cid, left(coalesce(nullif(p->>'interest',''), 'Enquiry from ' || v_name), 160),
+          greatest(0, coalesce((p->>'value')::numeric, 0)), (select base_currency from tenants where id = t), v_source, null)
+  returning id into did;
+  if v_msg <> '' then
+    insert into activities (tenant_id, contact_id, deal_id, kind, body, owner_id, created_by)
+    values (t, cid, did, 'note', 'Web enquiry: ' || v_msg, null, null);
+  end if;
+  return jsonb_build_object('ok', true);
+end $$;
 
 -- ===== Loyalty =====
-create table public.loyalty_settings (
-  tenant_id uuid primary key references public.tenants(id) on delete cascade,
-  enabled boolean not null default false,
-  points_per_unit numeric(10,4) not null default 1,    -- points earned per 1.00 of currency spent
-  redeem_value numeric(10,4) not null default 0.01,    -- currency value of 1 point
-  min_redeem int not null default 100
-);
-
 create table public.loyalty_ledger (
   id bigint generated always as identity primary key,
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   contact_id uuid not null references public.contacts(id) on delete cascade,
-  kind text not null check (kind in ('earn','redeem','adjust','reverse')),
-  points int not null,
+  points numeric(14,2) not null,
+  reason text not null check (reason in ('earn','redeem','adjust','void','expire')),
   sale_id uuid references public.sales(id) on delete set null,
   note text,
   created_by uuid default auth.uid(),
-  created_at timestamptz not null default now()
+  at timestamptz not null default now()
 );
-create index on public.loyalty_ledger (contact_id);
+create index on public.loyalty_ledger (contact_id, at desc);
 
-create or replace function public.points_balance(p_contact uuid)
-returns int language sql stable security definer set search_path = public as $$
-  select coalesce(sum(points),0)::int from loyalty_ledger where contact_id = p_contact;
-$$;
+create or replace function public.loyalty_ledger_after()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  update contacts set loyalty_points = loyalty_points + new.points where id = new.contact_id;
+  return null;
+end $$;
+create trigger trg_loyalty_after after insert on public.loyalty_ledger
+  for each row execute function public.loyalty_ledger_after();
 
--- Chart gets a loyalty expense account
+alter table public.payments drop constraint payments_method_check;
+alter table public.payments add constraint payments_method_check
+  check (method in ('cash','card','qr','ewallet','bank_transfer','voucher','store_credit','loyalty','other'));
+
+-- Paying with points: checks and deducts the balance as the payment is recorded
+create or replace function public.loyalty_payment_before()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare s sales; lo jsonb; pts numeric; bal numeric;
+begin
+  if new.method <> 'loyalty' then return new; end if;
+  select * into s from sales where id = new.sale_id;
+  if s.customer_id is null then raise exception 'Choose a customer to pay with points'; end if;
+  lo := crm_settings(s.tenant_id)->'loyalty';
+  if not coalesce((lo->>'enabled')::boolean, false) then raise exception 'Loyalty is turned off'; end if;
+  pts := ceil(new.amount / nullif((lo->>'point_value')::numeric, 0));
+  if pts is null then raise exception 'Point value is not set'; end if;
+  select loyalty_points into bal from contacts where id = s.customer_id for update;
+  if pts < coalesce((lo->>'min_redeem')::numeric, 0) then
+    raise exception 'Minimum % points to redeem', (lo->>'min_redeem');
+  end if;
+  if bal < pts then raise exception 'Not enough points: has %, needs %', bal, pts; end if;
+  insert into loyalty_ledger (tenant_id, contact_id, points, reason, sale_id)
+  values (s.tenant_id, s.customer_id, -pts, 'redeem', s.id);
+  return new;
+end $$;
+create trigger trg_loyalty_payment before insert on public.payments
+  for each row execute function public.loyalty_payment_before();
+
+-- Earn points and update customer stats when a sale completes; reverse on void
+create or replace function public.sale_crm_after()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare lo jsonb; pts numeric; paid_points numeric;
+begin
+  if new.customer_id is null then return null; end if;
+  -- complete_sale writes totals in one update after inserting the sale
+  if old.total = 0 and new.total > 0 and new.status = 'completed' then
+    select coalesce(sum(amount),0) into paid_points from payments where sale_id = new.id and method = 'loyalty';
+    lo := crm_settings(new.tenant_id)->'loyalty';
+    if coalesce((lo->>'enabled')::boolean, false) then
+      pts := floor((new.total - paid_points) * coalesce((lo->>'points_per_unit')::numeric, 0));
+      if pts > 0 then
+        insert into loyalty_ledger (tenant_id, contact_id, points, reason, sale_id, created_by)
+        values (new.tenant_id, new.customer_id, pts, 'earn', new.id, new.cashier_id);
+      end if;
+    end if;
+    update contacts set total_spent = total_spent + new.total, visits = visits + 1,
+      last_purchase_at = greatest(coalesce(last_purchase_at, new.sold_at), new.sold_at),
+      lifecycle = 'customer'
+    where id = new.customer_id;
+  elsif old.status = 'completed' and new.status = 'voided' then
+    insert into loyalty_ledger (tenant_id, contact_id, points, reason, sale_id, note)
+    select new.tenant_id, new.customer_id, -sum(points), 'void', new.id, 'Sale ' || new.receipt_no || ' voided'
+    from loyalty_ledger where sale_id = new.id and reason in ('earn','redeem')
+    having sum(points) <> 0;
+    update contacts set total_spent = greatest(0, total_spent - new.total), visits = greatest(0, visits - 1)
+    where id = new.customer_id;
+  end if;
+  return null;
+end $$;
+create trigger trg_sale_crm after update of total, status on public.sales
+  for each row execute function public.sale_crm_after();
+
+create or replace function public.adjust_points(p_contact uuid, p_points numeric, p_note text)
+returns numeric language plpgsql security definer set search_path = public as $$
+declare c contacts;
+begin
+  select * into c from contacts where id = p_contact;
+  if not found then raise exception 'Unknown customer'; end if;
+  if not has_perm(c.tenant_id, 'crm.loyalty.adjust') then raise exception 'Not allowed to adjust points'; end if;
+  if coalesce(trim(p_note),'') = '' then raise exception 'A reason is required'; end if;
+  if c.loyalty_points + p_points < 0 then raise exception 'Balance cannot go below zero'; end if;
+  insert into loyalty_ledger (tenant_id, contact_id, points, reason, note) values (c.tenant_id, c.id, p_points, 'adjust', p_note);
+  return c.loyalty_points + p_points;
+end $$;
+
+-- Accounting: points used as payment are a loyalty cost, not money in the card account
 create or replace function public.ensure_chart(p_tenant uuid)
 returns void language sql security definer set search_path = public as $$
   insert into accounts (tenant_id, code, name, type, is_system) values
@@ -291,389 +491,338 @@ returns void language sql security definer set search_path = public as $$
   on conflict (tenant_id, code) do nothing;
 $$;
 
--- Redeeming at the POS: a payment {method:'voucher', reference:'points:<n>'}.
--- The server sets the amount from the points, checks the balance and books the reward cost.
-create or replace function public.payments_redeem_before()
-returns trigger language plpgsql security definer set search_path = public as $$
-declare s sales; ls loyalty_settings; v_pts int; v_bal int;
+create or replace function public.post_sale(p_sale uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare s sales; v_loyalty numeric; v_noncash numeric; v_tax numeric; v_cogs numeric;
 begin
-  if new.method <> 'voucher' or coalesce(new.reference,'') not like 'points:%' then return new; end if;
-  select * into s from sales where id = new.sale_id;
-  if s.customer_id is null then raise exception 'Choose a customer to redeem points'; end if;
-  select * into ls from loyalty_settings where tenant_id = s.tenant_id;
-  if not found or not ls.enabled then raise exception 'Loyalty points are not turned on'; end if;
-  v_pts := substr(new.reference, 8)::int;
-  if v_pts <= 0 then raise exception 'Enter how many points to redeem'; end if;
-  if v_pts < ls.min_redeem then raise exception 'Minimum redemption is % points', ls.min_redeem; end if;
-  v_bal := points_balance(s.customer_id);
-  if v_pts > v_bal then raise exception 'Customer has only % points', v_bal; end if;
-  new.amount := round(v_pts * ls.redeem_value, 2);
-  insert into loyalty_ledger (tenant_id, contact_id, kind, points, sale_id, note)
-  values (s.tenant_id, s.customer_id, 'redeem', -v_pts, s.id, 'Redeemed on ' || s.receipt_no);
-  -- the voucher payment is debited to clearing by post_sale; move it to reward expense
-  perform post_entry(s.tenant_id, (s.sold_at at time zone 'UTC')::date, 'Points redeemed ' || s.receipt_no,
-    'loyalty_redeem', s.id, jsonb_build_array(
-      jsonb_build_object('code','6200','debit', new.amount),
-      jsonb_build_object('code','1010','credit', new.amount)));
-  return new;
-end $$;
-create trigger trg_payments_redeem before insert on public.payments
-  for each row execute function public.payments_redeem_before();
-
--- Earn when a sale is finalised; take back earned and return redeemed points on void
-create or replace function public.sales_loyalty_after()
-returns trigger language plpgsql security definer set search_path = public as $$
-declare ls loyalty_settings; v_base numeric; v_pts int;
-begin
-  if new.customer_id is null then return null; end if;
-  if old.status = 'completed' and new.status = 'voided' then
-    insert into loyalty_ledger (tenant_id, contact_id, kind, points, sale_id, note)
-    select tenant_id, contact_id, 'reverse', -sum(points), sale_id, 'Sale ' || new.receipt_no || ' voided'
-    from loyalty_ledger where sale_id = new.id and kind in ('earn','redeem')
-    group by tenant_id, contact_id, sale_id having sum(points) <> 0;
-    perform reverse_source(new.tenant_id, 'loyalty_redeem', new.id, 'loyalty_redeem_void', 'Void ' || new.receipt_no);
-    return null;
-  end if;
-  if new.status = 'completed' and old.total = 0 and new.total > 0 then
-    select * into ls from loyalty_settings where tenant_id = new.tenant_id;
-    if not found or not ls.enabled then return null; end if;
-    select new.total - coalesce(sum(amount),0) into v_base
-      from payments where sale_id = new.id and method = 'voucher' and reference like 'points:%';
-    v_pts := floor(greatest(v_base,0) * ls.points_per_unit);
-    if v_pts > 0 then
-      insert into loyalty_ledger (tenant_id, contact_id, kind, points, sale_id, note)
-      values (new.tenant_id, new.customer_id, 'earn', v_pts, new.id, 'Sale ' || new.receipt_no);
-    end if;
-    update contacts set lifecycle = 'customer' where id = new.customer_id and lifecycle in ('lead','prospect');
-    update contacts set score = score where id = new.customer_id;
-  end if;
-  return null;
-end $$;
-create trigger trg_sales_loyalty after update on public.sales
-  for each row execute function public.sales_loyalty_after();
-
-create or replace function public.adjust_points(p_contact uuid, p_points int, p_note text)
-returns int language plpgsql security definer set search_path = public as $$
-declare t uuid;
-begin
-  select tenant_id into t from contacts where id = p_contact;
-  if not has_perm(t, 'crm.loyalty.manage') then raise exception 'Not allowed'; end if;
-  if p_points = 0 then raise exception 'Enter a number of points'; end if;
-  if points_balance(p_contact) + p_points < 0 then raise exception 'Balance cannot go below zero'; end if;
-  insert into loyalty_ledger (tenant_id, contact_id, kind, points, note) values (t, p_contact, 'adjust', p_points, p_note);
-  return points_balance(p_contact);
+  select * into s from sales where id = p_sale;
+  select coalesce(sum(amount),0) into v_loyalty from payments where sale_id = s.id and method = 'loyalty';
+  v_loyalty := least(v_loyalty, s.total);
+  select coalesce(sum(amount),0) into v_noncash from payments where sale_id = s.id and method not in ('cash','loyalty');
+  v_noncash := least(v_noncash, s.total - v_loyalty);
+  select coalesce(sum(tax_amount),0) into v_tax from sale_lines where sale_id = s.id;
+  select coalesce(sum(l.qty * v.cost),0) into v_cogs
+    from sale_lines l join product_variants v on v.id = l.variant_id where l.sale_id = s.id and v.track_stock;
+  perform post_entry(s.tenant_id, (s.sold_at at time zone 'UTC')::date, 'Sale ' || s.receipt_no, 'sale', s.id, jsonb_build_array(
+    jsonb_build_object('code','1000','debit', s.total - v_noncash - v_loyalty),
+    jsonb_build_object('code','1010','debit', v_noncash),
+    jsonb_build_object('code','6200','debit', v_loyalty),
+    jsonb_build_object('code','4000','credit', s.total - v_tax),
+    jsonb_build_object('code','2100','credit', v_tax),
+    jsonb_build_object('code','5000','debit', round(v_cogs,2)),
+    jsonb_build_object('code','1200','credit', round(v_cogs,2))));
 end $$;
 
--- ===== Customer 360 =====
-create or replace view public.contact_stats with (security_invoker = true) as
-select c.id as contact_id, c.tenant_id,
-  (select count(*) from sales s where s.customer_id = c.id and s.status = 'completed') as orders,
-  (select coalesce(sum(s.total),0) from sales s where s.customer_id = c.id and s.status = 'completed')
-    + (select coalesce(sum(i.total),0) from invoices i where i.contact_id = c.id and i.status in ('issued','partial','paid')) as total_spend,
-  greatest((select max(s.sold_at) from sales s where s.customer_id = c.id and s.status = 'completed'),
-           (select max(i.issue_date)::timestamptz from invoices i where i.contact_id = c.id and i.status in ('issued','partial','paid'))) as last_purchase_at,
-  (select coalesce(sum(i.total - i.amount_paid),0) from invoices i where i.contact_id = c.id and i.status in ('issued','partial')) as owed,
-  (select coalesce(sum(points),0) from loyalty_ledger l where l.contact_id = c.id)::int as points,
-  (select count(*) from deals d where d.contact_id = c.id and d.status = 'open') as open_deals,
-  (select coalesce(sum(d.value),0) from deals d where d.contact_id = c.id and d.status = 'open') as open_deal_value
-from contacts c;
-
--- ===== Segments =====
--- filter: {"lifecycle":["customer"],"tags_any":["vip"],"min_score":20,"min_spend":500,
---          "purchased_within_days":30,"not_purchased_days":60,"has_points":true,"birthday_this_month":true,
---          "channel":"whatsapp"|"email"}  (channel = only people who opted in on it)
-create table public.segments (
-  id uuid primary key default gen_random_uuid(),
-  tenant_id uuid not null references public.tenants(id) on delete cascade,
-  name text not null,
-  filter jsonb not null default '{}',
-  created_at timestamptz not null default now()
-);
-
-create or replace function public.segment_contacts(p_tenant uuid, p_filter jsonb)
-returns setof uuid language sql stable security definer set search_path = public as $$
-  select c.id from contacts c
-  left join lateral (
-    select coalesce(sum(s.total),0) spend, max(s.sold_at) last_at
-    from sales s where s.customer_id = c.id and s.status = 'completed'
-  ) st on true
-  where c.tenant_id = p_tenant and is_member(p_tenant)
-    and c.kind in ('customer','both')
-    and (not (p_filter ? 'lifecycle') or c.lifecycle in (select jsonb_array_elements_text(p_filter->'lifecycle')))
-    and (not (p_filter ? 'tags_any') or c.tags && array(select jsonb_array_elements_text(p_filter->'tags_any')))
-    and (not (p_filter ? 'min_score') or c.score >= (p_filter->>'min_score')::int)
-    and (not (p_filter ? 'min_spend') or st.spend >= (p_filter->>'min_spend')::numeric)
-    and (not (p_filter ? 'purchased_within_days') or st.last_at > now() - ((p_filter->>'purchased_within_days') || ' days')::interval)
-    and (not (p_filter ? 'not_purchased_days') or st.last_at is null or st.last_at < now() - ((p_filter->>'not_purchased_days') || ' days')::interval)
-    and (not coalesce((p_filter->>'has_points')::boolean, false) or exists (select 1 from loyalty_ledger l where l.contact_id = c.id group by l.contact_id having sum(points) > 0))
-    and (not coalesce((p_filter->>'birthday_this_month')::boolean, false) or extract(month from c.birthday) = extract(month from current_date))
-    and (case p_filter->>'channel'
-           when 'whatsapp' then c.whatsapp_opt_in and c.phone_norm is not null
-           when 'email' then c.email_opt_in and c.email is not null
-           else true end);
+-- Cash expected in drawer must ignore points payments as well as card/QR
+create or replace function public.shift_expected_cash(p_shift uuid)
+returns numeric language sql stable security definer set search_path = public as $$
+  select sh.opening_cash + coalesce((
+    select sum(s.total - least(s.total, coalesce((select sum(p.amount) from payments p where p.sale_id = s.id and p.method <> 'cash'),0)))
+    from sales s where s.shift_id = sh.id and s.status = 'completed'), 0)
+  from shifts sh where sh.id = p_shift;
 $$;
 
-create or replace function public.segment_count(p_tenant uuid, p_filter jsonb)
-returns int language sql stable security definer set search_path = public as $$
-  select count(*)::int from segment_contacts(p_tenant, p_filter);
+-- ===== Segments & campaigns =====
+-- Filter keys (all optional): tags_any[], lifecycle[], min_spent, max_spent, min_visits,
+-- inactive_days (no purchase for N days), active_days (bought within N days),
+-- birthday_month (1–12), min_points, source
+create or replace function public.segment_match(c public.contacts, f jsonb)
+returns boolean language sql stable as $$
+  select
+    (f->'tags_any' is null or jsonb_array_length(f->'tags_any') = 0
+       or c.tags && array(select lower(jsonb_array_elements_text(f->'tags_any'))))
+    and (f->'lifecycle' is null or jsonb_array_length(f->'lifecycle') = 0
+       or c.lifecycle = any(array(select jsonb_array_elements_text(f->'lifecycle'))))
+    and (f->>'min_spent' is null or c.total_spent >= (f->>'min_spent')::numeric)
+    and (f->>'max_spent' is null or c.total_spent <= (f->>'max_spent')::numeric)
+    and (f->>'min_visits' is null or c.visits >= (f->>'min_visits')::int)
+    and (f->>'min_points' is null or c.loyalty_points >= (f->>'min_points')::numeric)
+    and (f->>'inactive_days' is null or c.last_purchase_at is null
+       or c.last_purchase_at < now() - make_interval(days => (f->>'inactive_days')::int))
+    and (f->>'active_days' is null
+       or c.last_purchase_at >= now() - make_interval(days => (f->>'active_days')::int))
+    and (f->>'birthday_month' is null or extract(month from c.birthday) = (f->>'birthday_month')::int)
+    and (f->>'source' is null or c.source = f->>'source');
 $$;
 
--- ===== Campaigns =====
+create or replace function public.segment_preview(p_tenant uuid, p_filter jsonb, p_channel text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare total int; reachable int;
+begin
+  if not has_perm(p_tenant, 'crm.campaign.manage') then raise exception 'Not allowed'; end if;
+  select count(*),
+         count(*) filter (where c.marketing_consent and case p_channel
+             when 'email' then c.email is not null else norm_phone(c.phone) is not null end)
+    into total, reachable
+  from contacts c where c.tenant_id = p_tenant and c.kind in ('customer','both') and segment_match(c, coalesce(p_filter,'{}'));
+  return jsonb_build_object('matched', total, 'reachable', reachable, 'no_consent_or_address', total - reachable);
+end $$;
+
 create table public.campaigns (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.tenants(id) on delete cascade,
   name text not null,
-  channel text not null check (channel in ('whatsapp','email')),
-  segment_filter jsonb not null default '{}',
-  subject text,                                  -- email
-  message text not null,                         -- supports {{name}} {{first_name}} {{points}} {{business}}
-  wa_template_name text,                         -- WhatsApp approved template (required outside the 24h window)
-  wa_template_lang text default 'en',
+  channel text not null check (channel in ('whatsapp','email','sms')),
+  filter jsonb not null default '{}',
+  subject text,                                         -- email
+  body text not null,                                   -- supports {{name}}, {{first_name}}, {{points}}, {{business}}
+  wa_template text,                                     -- approved WhatsApp template name (required by Meta for marketing)
+  wa_language text default 'en',
   status text not null default 'draft' check (status in ('draft','queued','sending','sent','cancelled')),
+  scheduled_at timestamptz,
   queued_count int not null default 0,
   sent_count int not null default 0,
   failed_count int not null default 0,
   created_by uuid default auth.uid(),
-  created_at timestamptz not null default now(),
-  sent_at timestamptz
-);
-
-create table public.campaign_recipients (
-  id bigint generated always as identity primary key,
-  tenant_id uuid not null references public.tenants(id) on delete cascade,
-  campaign_id uuid not null references public.campaigns(id) on delete cascade,
-  contact_id uuid not null references public.contacts(id) on delete cascade,
-  to_address text not null,
-  status text not null default 'queued' check (status in ('queued','sent','failed','skipped')),
-  error text,
-  provider_id text,
-  sent_at timestamptz,
-  unique (campaign_id, contact_id)
-);
-create index on public.campaign_recipients (campaign_id, status);
-
--- Builds the audience (opted-in only) and queues it for the send-messages function
-create or replace function public.queue_campaign(p_campaign uuid)
-returns int language plpgsql security definer set search_path = public as $$
-declare c campaigns; n int;
-begin
-  select * into c from campaigns where id = p_campaign for update;
-  if not found then raise exception 'Unknown campaign'; end if;
-  if not has_perm(c.tenant_id, 'crm.campaign.manage') then raise exception 'Not allowed'; end if;
-  if c.status <> 'draft' then raise exception 'Campaign is already %', c.status; end if;
-  insert into campaign_recipients (tenant_id, campaign_id, contact_id, to_address)
-  select c.tenant_id, c.id, ct.id, case c.channel when 'whatsapp' then ct.phone_norm else ct.email end
-  from contacts ct
-  where ct.id in (select segment_contacts(c.tenant_id, c.segment_filter || jsonb_build_object('channel', c.channel)));
-  get diagnostics n = row_count;
-  if n = 0 then raise exception 'Nobody in this audience has opted in to %', c.channel; end if;
-  update campaigns set status = 'queued', queued_count = n where id = c.id;
-  return n;
-end $$;
-
--- Called by the send-messages function (service role) after each send
-create or replace function public.campaign_mark(p_recipient bigint, p_ok boolean, p_provider_id text, p_error text)
-returns void language plpgsql security definer set search_path = public as $$
-declare r campaign_recipients;
-begin
-  update campaign_recipients set status = case when p_ok then 'sent' else 'failed' end,
-    provider_id = p_provider_id, error = p_error, sent_at = case when p_ok then now() end
-  where id = p_recipient and status = 'queued' returning * into r;
-  if not found then return; end if;
-  update campaigns set
-    sent_count = sent_count + case when p_ok then 1 else 0 end,
-    failed_count = failed_count + case when p_ok then 0 else 1 end,
-    status = case when not exists (select 1 from campaign_recipients where campaign_id = r.campaign_id and status = 'queued')
-                  then 'sent' else 'sending' end,
-    sent_at = case when not exists (select 1 from campaign_recipients where campaign_id = r.campaign_id and status = 'queued')
-                   then now() else sent_at end
-  where id = r.campaign_id;
-  if p_ok then
-    insert into activities (tenant_id, contact_id, kind, subject, created_by)
-    select r.tenant_id, r.contact_id, c.channel, 'Campaign: ' || c.name, c.created_by
-    from campaigns c where c.id = r.campaign_id;
-  end if;
-end $$;
--- only the send-messages function (service role) may mark sends
-revoke execute on function public.campaign_mark(bigint, boolean, text, text) from public;
-do $$ begin
-  if exists (select 1 from pg_roles where rolname = 'anon') then
-    revoke execute on function public.campaign_mark(bigint, boolean, text, text) from anon, authenticated;
-  end if;
-  if exists (select 1 from pg_roles where rolname = 'service_role') then
-    grant execute on function public.campaign_mark(bigint, boolean, text, text) to service_role;
-  end if;
-end $$;
-
--- ===== Web lead forms =====
-create table public.lead_forms (
-  id uuid primary key default gen_random_uuid(),
-  tenant_id uuid not null references public.tenants(id) on delete cascade,
-  name text not null,
-  public_key text not null unique default encode(gen_random_bytes(12), 'hex'),
-  create_deal boolean not null default true,
-  deal_title text default 'Web enquiry',
-  owner_id uuid references auth.users(id) on delete set null,
-  tags text[] not null default '{}',
-  consent_text text default 'I agree to be contacted about my enquiry and offers.',
-  active boolean not null default true,
-  submissions int not null default 0,
   created_at timestamptz not null default now()
 );
 
-create table public.lead_form_hits (
-  form_id uuid not null references public.lead_forms(id) on delete cascade,
-  at timestamptz not null default now()
+create table public.outbound_messages (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  campaign_id uuid references public.campaigns(id) on delete cascade,
+  contact_id uuid references public.contacts(id) on delete set null,
+  channel text not null check (channel in ('whatsapp','email','sms')),
+  to_address text not null,
+  subject text,
+  body text not null,
+  wa_template text,
+  wa_language text,
+  wa_params jsonb,
+  status text not null default 'queued' check (status in ('queued','sending','sent','failed','cancelled')),
+  send_after timestamptz not null default now(),
+  attempts int not null default 0,
+  provider_id text,
+  error text,
+  sent_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (campaign_id, contact_id)
 );
-create index on public.lead_form_hits (form_id, at);
+create index on public.outbound_messages (status, send_after) where status = 'queued';
 
--- Public endpoint (anon key): POST /rest/v1/rpc/submit_lead
--- p: {"name","phone","email","message","consent":true,"website":""}  — "website" is a honeypot
-create or replace function public.submit_lead(p_key text, p jsonb)
-returns jsonb language plpgsql security definer set search_path = public as $$
-declare f lead_forms; cid uuid; v_phone text; v_country char(2); pid uuid; sid uuid; v_consent boolean;
+create or replace function public.render_template(p_body text, c public.contacts, p_business text)
+returns text language sql immutable as $$
+  select replace(replace(replace(replace(p_body,
+    '{{name}}', coalesce(c.name,'')),
+    '{{first_name}}', coalesce(split_part(c.name,' ',1),'')),
+    '{{points}}', trim(to_char(c.loyalty_points, 'FM999999990'))),
+    '{{business}}', coalesce(p_business,''));
+$$;
+
+-- Builds the message list for a campaign. Only contacts who consented and have an address are included.
+create or replace function public.queue_campaign(p_campaign uuid)
+returns int language plpgsql security definer set search_path = public as $$
+declare cp campaigns; biz text; n int;
 begin
-  select * into f from lead_forms where public_key = p_key and active;
-  if not found then raise exception 'Form not found'; end if;
-  if coalesce(p->>'website','') <> '' then return jsonb_build_object('ok', true); end if;   -- bot
-  if (select count(*) from lead_form_hits where form_id = f.id and at > now() - interval '1 minute') >= 20 then
-    raise exception 'Too many submissions, try again shortly';
+  select * into cp from campaigns where id = p_campaign for update;
+  if not found then raise exception 'Unknown campaign'; end if;
+  if not has_perm(cp.tenant_id, 'crm.campaign.manage') then raise exception 'Not allowed'; end if;
+  if cp.status <> 'draft' then raise exception 'Campaign is already %', cp.status; end if;
+  if cp.channel = 'whatsapp' and coalesce(cp.wa_template,'') = '' then
+    raise exception 'WhatsApp campaigns need an approved template name';
   end if;
-  insert into lead_form_hits (form_id) values (f.id);
-  if coalesce(trim(p->>'name'),'') = '' or (coalesce(trim(p->>'phone'),'') = '' and coalesce(trim(p->>'email'),'') = '') then
-    raise exception 'Please give your name and a phone number or email';
-  end if;
-  if length(coalesce(p->>'message','')) > 2000 or length(p->>'name') > 120 then raise exception 'Too long'; end if;
+  if cp.channel = 'email' and coalesce(cp.subject,'') = '' then raise exception 'Email campaigns need a subject'; end if;
+  select name into biz from tenants where id = cp.tenant_id;
 
-  select country_code into v_country from tenants where id = f.tenant_id;
-  v_phone := normalize_phone(p->>'phone', v_country);
-  v_consent := coalesce((p->>'consent')::boolean, false);
+  insert into outbound_messages (tenant_id, campaign_id, contact_id, channel, to_address, subject, body,
+                                 wa_template, wa_language, wa_params, send_after)
+  select cp.tenant_id, cp.id, c.id, cp.channel,
+         case when cp.channel = 'email' then lower(c.email) else norm_phone(c.phone) end,
+         cp.subject, render_template(cp.body, c, biz),
+         cp.wa_template, cp.wa_language,
+         case when cp.channel = 'whatsapp' then jsonb_build_array(split_part(c.name,' ',1)) end,
+         coalesce(cp.scheduled_at, now())
+  from contacts c
+  where c.tenant_id = cp.tenant_id and c.kind in ('customer','both')
+    and c.marketing_consent
+    and case when cp.channel = 'email' then c.email is not null else norm_phone(c.phone) is not null end
+    and segment_match(c, cp.filter)
+  on conflict (campaign_id, contact_id) do nothing;
+  get diagnostics n = row_count;
 
-  select id into cid from contacts where tenant_id = f.tenant_id
-    and ((v_phone is not null and phone_norm = v_phone) or (p->>'email' <> '' and lower(email) = lower(p->>'email')))
-  limit 1;
-  if cid is null then
-    insert into contacts (tenant_id, kind, name, phone, email, lifecycle, source, owner_id, tags,
-                          whatsapp_opt_in, email_opt_in, consent_source)
-    values (f.tenant_id, 'customer', trim(p->>'name'), nullif(trim(p->>'phone'),''), nullif(trim(p->>'email'),''),
-            'lead', 'web_form', f.owner_id, f.tags, v_consent and v_phone is not null,
-            v_consent and coalesce(p->>'email','') <> '', case when v_consent then 'Web form: ' || f.name end)
-    returning id into cid;
-  elsif v_consent then
-    update contacts set whatsapp_opt_in = whatsapp_opt_in or v_phone is not null,
-                        email_opt_in = email_opt_in or coalesce(p->>'email','') <> '',
-                        consent_source = coalesce(consent_source, 'Web form: ' || f.name)
-    where id = cid;
-  end if;
-
-  insert into activities (tenant_id, contact_id, kind, subject, body, assigned_to)
-  values (f.tenant_id, cid, 'note', 'Web form: ' || f.name, nullif(p->>'message',''), f.owner_id);
-  insert into activities (tenant_id, contact_id, kind, subject, due_at, assigned_to)
-  values (f.tenant_id, cid, 'task', 'Follow up web enquiry from ' || trim(p->>'name'), now() + interval '1 day', f.owner_id);
-
-  if f.create_deal then
-    perform ensure_crm_defaults(f.tenant_id);
-    select id into pid from pipelines where tenant_id = f.tenant_id order by is_default desc limit 1;
-    select id into sid from pipeline_stages where pipeline_id = pid order by sort_order limit 1;
-    insert into deals (tenant_id, pipeline_id, stage_id, contact_id, title, owner_id, source)
-    values (f.tenant_id, pid, sid, cid, coalesce(f.deal_title, 'Web enquiry') || ' — ' || trim(p->>'name'), f.owner_id, 'web_form');
-  end if;
-
-  update lead_forms set submissions = submissions + 1 where id = f.id;
-  return jsonb_build_object('ok', true);
+  update campaigns set status = 'queued', queued_count = n where id = cp.id;
+  insert into activities (tenant_id, contact_id, kind, body, created_by)
+  select cp.tenant_id, contact_id, 'system', 'Campaign "' || cp.name || '" queued (' || cp.channel || ')', auth.uid()
+  from outbound_messages where campaign_id = cp.id;
+  return n;
 end $$;
-grant execute on function public.submit_lead(text, jsonb) to anon;
+
+create or replace function public.cancel_campaign(p_campaign uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare cp campaigns;
+begin
+  select * into cp from campaigns where id = p_campaign;
+  if not has_perm(cp.tenant_id, 'crm.campaign.manage') then raise exception 'Not allowed'; end if;
+  update outbound_messages set status = 'cancelled' where campaign_id = cp.id and status = 'queued';
+  update campaigns set status = 'cancelled' where id = cp.id and status in ('draft','queued');
+end $$;
+
+-- One-off message to a single customer (e.g. "your order is ready"); transactional, so no marketing consent needed
+create or replace function public.send_message(p_contact uuid, p_channel text, p_body text, p_subject text default null,
+                                               p_wa_template text default null)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare c contacts; mid uuid; addr text;
+begin
+  select * into c from contacts where id = p_contact;
+  if not found or not (has_perm(c.tenant_id, 'crm.deal.manage') or has_perm(c.tenant_id, 'crm.contact.manage')) then
+    raise exception 'Not allowed';
+  end if;
+  addr := case when p_channel = 'email' then lower(c.email) else norm_phone(c.phone) end;
+  if addr is null then raise exception 'Customer has no % address', p_channel; end if;
+  insert into outbound_messages (tenant_id, contact_id, channel, to_address, subject, body, wa_template, wa_params)
+  values (c.tenant_id, c.id, p_channel, addr, p_subject, p_body, p_wa_template,
+          case when p_wa_template is not null then jsonb_build_array(split_part(c.name,' ',1)) end)
+  returning id into mid;
+  insert into activities (tenant_id, contact_id, kind, body) values (c.tenant_id, c.id,
+    case p_channel when 'email' then 'email' when 'whatsapp' then 'whatsapp' else 'note' end, p_body);
+  return mid;
+end $$;
+
+-- Called by the sender (service role) after each attempt
+create or replace function public.campaign_refresh_counts(p_campaign uuid)
+returns void language sql security definer set search_path = public as $$
+  update campaigns cp set
+    sent_count = (select count(*) from outbound_messages where campaign_id = cp.id and status = 'sent'),
+    failed_count = (select count(*) from outbound_messages where campaign_id = cp.id and status = 'failed'),
+    status = case
+      when cp.status in ('queued','sending') and not exists
+        (select 1 from outbound_messages where campaign_id = cp.id and status in ('queued','sending')) then 'sent'
+      when cp.status = 'queued' then 'sending' else cp.status end
+  where cp.id = p_campaign;
+$$;
+
+-- ===== Messaging credentials (never readable by app users) =====
+create table public.integration_secrets (
+  tenant_id uuid not null references public.tenants(id) on delete cascade,
+  provider text not null check (provider in ('whatsapp_cloud','resend','twilio','myinvois')),
+  config jsonb not null,                                -- e.g. {"phone_number_id":"…","token":"…"}
+  updated_at timestamptz not null default now(),
+  primary key (tenant_id, provider)
+);
+alter table public.integration_secrets enable row level security;  -- no policies: only the service role reads it
+
+create or replace function public.set_integration_secret(p_tenant uuid, p_provider text, p_config jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not has_perm(p_tenant, 'crm.settings.manage') then raise exception 'Not allowed'; end if;
+  insert into integration_secrets (tenant_id, provider, config) values (p_tenant, p_provider, p_config)
+  on conflict (tenant_id, provider) do update set config = excluded.config, updated_at = now();
+end $$;
+
+create or replace function public.integration_status(p_tenant uuid)
+returns table (provider text, configured boolean, updated_at timestamptz)
+language sql stable security definer set search_path = public as $$
+  select p, s.tenant_id is not null, s.updated_at
+  from unnest(array['whatsapp_cloud','resend','twilio','myinvois']) p
+  left join integration_secrets s on s.tenant_id = p_tenant and s.provider = p
+  where is_member(p_tenant);
+$$;
+
+-- ===== Helpful views =====
+create or replace view public.my_tasks with (security_invoker = true) as
+select a.*, c.name as contact_name, c.phone as contact_phone, d.title as deal_title,
+       (a.due_at < now()) as overdue
+from activities a
+left join contacts c on c.id = a.contact_id
+left join deals d on d.id = a.deal_id
+where a.kind in ('task','meeting') and a.done_at is null;
+
+create or replace view public.deal_board with (security_invoker = true) as
+select d.*, s.name as stage_name, s.sort_order as stage_order, s.probability,
+       c.name as contact_name, c.phone as contact_phone, c.email as contact_email,
+       (select max(created_at) from activities a where a.deal_id = d.id and a.kind <> 'system') as last_activity_at
+from deals d
+join pipeline_stages s on s.id = d.stage_id
+left join contacts c on c.id = d.contact_id;
+
+create or replace function public.pipeline_summary(p_tenant uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare r jsonb;
+begin
+  if not has_perm(p_tenant, 'crm.deal.view') then raise exception 'Not allowed'; end if;
+  select jsonb_build_object(
+    'open_count', count(*) filter (where d.status = 'open'),
+    'open_value', coalesce(sum(d.value) filter (where d.status = 'open'),0),
+    'weighted_value', round(coalesce(sum(d.value * s.probability / 100.0) filter (where d.status = 'open'),0), 2),
+    'won_30d', count(*) filter (where d.status = 'won' and d.closed_at > now() - interval '30 days'),
+    'won_value_30d', coalesce(sum(d.value) filter (where d.status = 'won' and d.closed_at > now() - interval '30 days'),0),
+    'lost_30d', count(*) filter (where d.status = 'lost' and d.closed_at > now() - interval '30 days'),
+    'win_rate_90d', round(100.0 * count(*) filter (where d.status = 'won' and d.closed_at > now() - interval '90 days')
+                     / nullif(count(*) filter (where d.status in ('won','lost') and d.closed_at > now() - interval '90 days'),0), 1)
+  ) into r
+  from deals d join pipeline_stages s on s.id = d.stage_id where d.tenant_id = p_tenant;
+  return r;
+end $$;
 
 -- ===== RLS =====
-alter table public.lead_score_rules enable row level security;
 alter table public.pipelines enable row level security;
 alter table public.pipeline_stages enable row level security;
 alter table public.deals enable row level security;
 alter table public.activities enable row level security;
-alter table public.loyalty_settings enable row level security;
 alter table public.loyalty_ledger enable row level security;
-alter table public.segments enable row level security;
 alter table public.campaigns enable row level security;
-alter table public.campaign_recipients enable row level security;
-alter table public.lead_forms enable row level security;
-alter table public.lead_form_hits enable row level security;
+alter table public.outbound_messages enable row level security;
+alter table public.lead_capture_log enable row level security;
 
--- contacts: cashiers may add (not edit) customers
-drop policy contacts_write on public.contacts;
-create policy contacts_insert on public.contacts for insert
-  with check (has_perm(tenant_id, 'crm.contact.manage') or has_perm(tenant_id, 'crm.contact.create'));
-create policy contacts_update on public.contacts for update
-  using (has_perm(tenant_id, 'crm.contact.manage')) with check (has_perm(tenant_id, 'crm.contact.manage'));
-create policy contacts_delete on public.contacts for delete using (has_perm(tenant_id, 'crm.contact.manage'));
-
-create policy lsr_read on public.lead_score_rules for select using (has_perm(tenant_id, 'crm.contact.view'));
-create policy lsr_write on public.lead_score_rules for all
-  using (has_perm(tenant_id, 'crm.deal.manage')) with check (has_perm(tenant_id, 'crm.deal.manage'));
-
-create policy pipelines_read on public.pipelines for select using (has_perm(tenant_id, 'crm.contact.view'));
+create policy pipelines_read on public.pipelines for select using (has_perm(tenant_id, 'crm.deal.view'));
 create policy pipelines_write on public.pipelines for all
-  using (has_perm(tenant_id, 'crm.deal.manage')) with check (has_perm(tenant_id, 'crm.deal.manage'));
-create policy stages_read on public.pipeline_stages for select using (has_perm(tenant_id, 'crm.contact.view'));
+  using (has_perm(tenant_id, 'crm.settings.manage')) with check (has_perm(tenant_id, 'crm.settings.manage'));
+create policy stages_read on public.pipeline_stages for select using (has_perm(tenant_id, 'crm.deal.view'));
 create policy stages_write on public.pipeline_stages for all
-  using (has_perm(tenant_id, 'crm.deal.manage')) with check (has_perm(tenant_id, 'crm.deal.manage'));
-create policy deals_read on public.deals for select using (has_perm(tenant_id, 'crm.contact.view'));
+  using (has_perm(tenant_id, 'crm.settings.manage')) with check (has_perm(tenant_id, 'crm.settings.manage'));
+
+create policy deals_read on public.deals for select using (has_perm(tenant_id, 'crm.deal.view'));
 create policy deals_write on public.deals for all
   using (has_perm(tenant_id, 'crm.deal.manage')) with check (has_perm(tenant_id, 'crm.deal.manage'));
 
-create policy act_read on public.activities for select using (has_perm(tenant_id, 'crm.contact.view'));
-create policy act_insert on public.activities for insert
-  with check (has_perm(tenant_id, 'crm.contact.manage') and kind <> 'system');
-create policy act_update on public.activities for update
-  using (has_perm(tenant_id, 'crm.contact.manage') and kind <> 'system')
-  with check (has_perm(tenant_id, 'crm.contact.manage') and kind <> 'system');
-create policy act_delete on public.activities for delete
-  using (kind <> 'system' and (created_by = auth.uid() or has_perm(tenant_id, 'crm.deal.manage')));
+create policy activities_read on public.activities for select
+  using (has_perm(tenant_id, 'crm.deal.view') or has_perm(tenant_id, 'crm.contact.view'));
+create policy activities_insert on public.activities for insert
+  with check ((has_perm(tenant_id, 'crm.deal.manage') or has_perm(tenant_id, 'crm.contact.manage')) and kind <> 'system');
+create policy activities_update on public.activities for update
+  using (has_perm(tenant_id, 'crm.deal.manage') and (owner_id = auth.uid() or created_by = auth.uid() or has_perm(tenant_id, 'crm.settings.manage')))
+  with check (kind <> 'system');
+create policy activities_delete on public.activities for delete
+  using (kind <> 'system' and (created_by = auth.uid() or has_perm(tenant_id, 'crm.settings.manage')));
 
-create policy loy_set_read on public.loyalty_settings for select using (is_member(tenant_id));
-create policy loy_set_write on public.loyalty_settings for all
-  using (has_perm(tenant_id, 'crm.loyalty.manage')) with check (has_perm(tenant_id, 'crm.loyalty.manage'));
-create policy loy_ledger_read on public.loyalty_ledger for select using (has_perm(tenant_id, 'crm.contact.view'));
+create policy loyalty_read on public.loyalty_ledger for select using (has_perm(tenant_id, 'crm.contact.view'));
 
-create policy seg_read on public.segments for select using (has_perm(tenant_id, 'crm.contact.view'));
-create policy seg_write on public.segments for all
-  using (has_perm(tenant_id, 'crm.campaign.manage')) with check (has_perm(tenant_id, 'crm.campaign.manage'));
-create policy camp_read on public.campaigns for select using (has_perm(tenant_id, 'crm.campaign.manage'));
-create policy camp_write on public.campaigns for all
+create policy campaigns_read on public.campaigns for select using (has_perm(tenant_id, 'crm.campaign.manage'));
+create policy campaigns_insert on public.campaigns for insert
+  with check (has_perm(tenant_id, 'crm.campaign.manage') and status = 'draft');
+create policy campaigns_update on public.campaigns for update
   using (has_perm(tenant_id, 'crm.campaign.manage') and status = 'draft')
   with check (has_perm(tenant_id, 'crm.campaign.manage') and status = 'draft');
-create policy campr_read on public.campaign_recipients for select using (has_perm(tenant_id, 'crm.campaign.manage'));
-
-create policy forms_read on public.lead_forms for select using (has_perm(tenant_id, 'crm.form.manage'));
-create policy forms_write on public.lead_forms for all
-  using (has_perm(tenant_id, 'crm.form.manage')) with check (has_perm(tenant_id, 'crm.form.manage'));
+create policy campaigns_delete on public.campaigns for delete
+  using (has_perm(tenant_id, 'crm.campaign.manage') and status = 'draft');
+create policy outbound_read on public.outbound_messages for select
+  using (has_perm(tenant_id, 'crm.campaign.manage') or has_perm(tenant_id, 'crm.contact.manage'));
 
 do $$ declare t text; begin
-  foreach t in array array['deals','loyalty_settings','campaigns','lead_forms','segments'] loop
+  foreach t in array array['deals','pipelines','pipeline_stages','campaigns','loyalty_ledger'] loop
     execute format('create trigger audit_%1$s after insert or update or delete on public.%1$I
                     for each row execute function public.audit_trigger()', t);
   end loop;
 end $$;
 
--- Defaults for businesses created before this batch
-select public.ensure_crm_defaults(id) from public.tenants;
+-- Lead form is public: allow the anonymous role to call only this function
+revoke execute on function public.capture_lead(text, jsonb) from public;
+grant execute on function public.capture_lead(text, jsonb) to anon, authenticated;
 
--- New businesses get their chart of accounts, pipeline, scoring rules and loyalty settings straight away
-create or replace function public.create_tenant(p_name text, p_template text default null, p_country char(2) default 'MY')
-returns uuid language plpgsql security definer set search_path = public as $$
-declare tid uuid; owner_role uuid;
+-- New tenants get a pipeline and CRM settings straight away
+create or replace function public.tenant_crm_init()
+returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if auth.uid() is null then raise exception 'Sign in first'; end if;
-  insert into tenants (name, industry_template, country_code) values (p_name, p_template, p_country) returning id into tid;
-  insert into outlets (tenant_id, name, country_code) values (tid, 'Main', p_country);
-  select id into owner_role from roles where tenant_id is null and name = 'Owner';
-  insert into memberships (tenant_id, user_id, role_id) values (tid, auth.uid(), owner_role);
-  insert into tenant_modules (tenant_id, module)
-  select tid, m from unnest(coalesce(
-    (select array(select jsonb_array_elements_text(bundle->'modules')) from templates where code = p_template),
-    array['POS','INV'])) m
-  on conflict do nothing;
-  perform ensure_chart(tid);
-  perform ensure_crm_defaults(tid);
-  return tid;
+  perform ensure_pipeline(new.id);
+  perform crm_settings(new.id);
+  return null;
 end $$;
+create trigger trg_tenant_crm_init after insert on public.tenants
+  for each row execute function public.tenant_crm_init();
 
+do $$ declare t record; begin
+  for t in select id from public.tenants loop
+    perform public.ensure_pipeline(t.id);
+    perform public.crm_settings(t.id);
+  end loop;
+end $$;
