@@ -2,12 +2,115 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../services/contact_links.dart';
+import '../services/crm.dart';
 import '../services/session.dart';
-import 'contact_form_screen.dart';
-import 'deal_sheet.dart';
+import '../widgets/timeline.dart';
+import 'deal_screen.dart';
 
-/// Customer 360: profile, spend, points, deals and full activity timeline.
+/// Add (contact == null) or edit a customer. Returns the saved row.
+Future<Map<String, dynamic>?> editContact(BuildContext context, Map<String, dynamic>? contact) async {
+  final s = Session.instance;
+  final c = contact ?? {};
+  TextEditingController t(String k) => TextEditingController(text: (c[k] ?? '').toString());
+  final name = t('name'), phone = t('phone'), email = t('email'), company = t('company');
+  final tin = t('tin'), regNo = t('reg_no'), notes = t('notes'), source = t('source');
+  final tags = TextEditingController(text: ((c['tags'] as List?) ?? []).join(', '));
+  var lifecycle = (c['lifecycle'] ?? 'lead') as String;
+  var consent = (c['marketing_consent'] ?? false) as bool;
+  DateTime? birthday = c['birthday'] == null ? null : DateTime.parse(c['birthday'] as String);
+  final canEdit = s.can('crm.contact.manage') || (contact == null && s.can('crm.contact.create'));
+
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (_) => StatefulBuilder(
+      builder: (context, set) => AlertDialog(
+        title: Text(contact == null ? 'New customer' : 'Edit customer'),
+        content: SingleChildScrollView(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: name, decoration: const InputDecoration(labelText: 'Name *')),
+            TextField(controller: phone, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Phone / WhatsApp')),
+            TextField(controller: email, keyboardType: TextInputType.emailAddress, decoration: const InputDecoration(labelText: 'Email')),
+            TextField(controller: company, decoration: const InputDecoration(labelText: 'Company')),
+            TextField(controller: tin, decoration: const InputDecoration(labelText: 'Tax ID / TIN')),
+            TextField(controller: regNo, decoration: const InputDecoration(labelText: 'Business reg. no.')),
+            TextField(controller: tags, decoration: const InputDecoration(labelText: 'Tags (comma separated)', hintText: 'vip, wholesale')),
+            TextField(controller: source, decoration: const InputDecoration(labelText: 'Source', hintText: 'walk-in, facebook, referral…')),
+            DropdownButtonFormField<String>(
+              value: lifecycle,
+              decoration: const InputDecoration(labelText: 'Stage'),
+              items: const [
+                DropdownMenuItem(value: 'lead', child: Text('Lead')),
+                DropdownMenuItem(value: 'prospect', child: Text('Prospect')),
+                DropdownMenuItem(value: 'customer', child: Text('Customer')),
+                DropdownMenuItem(value: 'inactive', child: Text('Inactive')),
+              ],
+              onChanged: (v) => set(() => lifecycle = v!),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.cake_outlined),
+              title: Text(birthday == null ? 'Birthday' : DateFormat('d MMMM').format(birthday!)),
+              trailing: birthday == null ? null : IconButton(icon: const Icon(Icons.clear), onPressed: () => set(() => birthday = null)),
+              onTap: () async {
+                final d = await showDatePicker(
+                  context: context,
+                  initialDate: birthday ?? DateTime(1990, 1, 1),
+                  firstDate: DateTime(1900),
+                  lastDate: DateTime.now(),
+                );
+                if (d != null) set(() => birthday = d);
+              },
+            ),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: consent,
+              onChanged: (v) => set(() => consent = v ?? false),
+              title: const Text('Agrees to receive offers'),
+              subtitle: const Text('Needed for campaigns', style: TextStyle(fontSize: 12)),
+            ),
+            TextField(controller: notes, maxLines: 3, decoration: const InputDecoration(labelText: 'Notes')),
+          ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          if (canEdit) FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
+        ],
+      ),
+    ),
+  );
+  if (ok != true) return null;
+  if (name.text.trim().isEmpty) {
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Name is required')));
+    return null;
+  }
+  String? v(TextEditingController x) => x.text.trim().isEmpty ? null : x.text.trim();
+  final data = {
+    'tenant_id': s.tenantId,
+    'name': name.text.trim(),
+    'phone': v(phone),
+    'email': v(email)?.toLowerCase(),
+    'company': v(company),
+    'tin': v(tin),
+    'reg_no': v(regNo),
+    'notes': v(notes),
+    'source': v(source),
+    'tags': tags.text.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList(),
+    'lifecycle': lifecycle,
+    'marketing_consent': consent,
+    if (consent && !(c['marketing_consent'] ?? false)) 'consent_source': 'staff (app)',
+    'birthday': birthday == null ? null : DateFormat('yyyy-MM-dd').format(birthday!),
+  };
+  try {
+    if (contact == null) {
+      return await s.db.from('contacts').insert({...data, 'kind': 'customer'}).select().single();
+    }
+    return await s.db.from('contacts').update(data).eq('id', contact['id']).select().single();
+  } on PostgrestException catch (e) {
+    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+    return null;
+  }
+}
+
 class ContactScreen extends StatefulWidget {
   final String contactId;
   const ContactScreen({super.key, required this.contactId});
@@ -17,15 +120,15 @@ class ContactScreen extends StatefulWidget {
 
 class _ContactScreenState extends State<ContactScreen> {
   Map<String, dynamic>? _c;
-  Map<String, dynamic>? _stats;
-  List<Map<String, dynamic>> _acts = [];
   List<Map<String, dynamic>> _deals = [];
+  List<Map<String, dynamic>> _sales = [];
+  List<Map<String, dynamic>> _invoices = [];
   List<Map<String, dynamic>> _points = [];
   bool _loading = true;
+  final _timeline = GlobalKey<TimelineState>();
 
   Session get _s => Session.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
-  final _dt = DateFormat('d MMM yyyy, HH:mm');
 
   @override
   void initState() {
@@ -36,102 +139,42 @@ class _ContactScreenState extends State<ContactScreen> {
   Future<void> _load() async {
     try {
       final id = widget.contactId;
-      final c = await _s.db.from('contacts').select().eq('id', id).single();
-      final stats = await _s.db.from('contact_stats').select().eq('contact_id', id).maybeSingle();
-      final acts = await _s.db.from('activities').select().eq('contact_id', id).order('created_at', ascending: false).limit(100);
-      final deals = await _s.db
-          .from('deals')
-          .select('*, pipeline_stages(name, kind)')
-          .eq('contact_id', id)
-          .order('created_at', ascending: false);
-      final pts = await _s.db.from('loyalty_ledger').select().eq('contact_id', id).order('created_at', ascending: false).limit(50);
-      setState(() {
-        _c = c;
-        _stats = stats;
-        _acts = List<Map<String, dynamic>>.from(acts);
-        _deals = List<Map<String, dynamic>>.from(deals);
-        _points = List<Map<String, dynamic>>.from(pts);
-      });
+      _c = await _s.db.from('contacts').select().eq('id', id).single();
+      if (_s.can('crm.deal.view')) {
+        _deals = List<Map<String, dynamic>>.from(
+            await _s.db.from('deal_board').select().eq('contact_id', id).order('created_at', ascending: false));
+      }
+      if (_s.can('pos.report.view') || _s.can('pos.sale.create')) {
+        _sales = List<Map<String, dynamic>>.from(await _s.db
+            .from('sales')
+            .select('id, receipt_no, total, status, sold_at')
+            .eq('customer_id', id)
+            .order('sold_at', ascending: false)
+            .limit(20));
+      }
+      if (_s.can('fin.invoice.view')) {
+        _invoices = List<Map<String, dynamic>>.from(await _s.db
+            .from('invoice_list')
+            .select('id, number, status, total, balance, overdue')
+            .eq('contact_id', id)
+            .order('created_at', ascending: false)
+            .limit(20));
+      }
+      _points = List<Map<String, dynamic>>.from(
+          await _s.db.from('loyalty_ledger').select().eq('contact_id', id).order('at', ascending: false).limit(20));
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not load: $e')));
     }
     if (mounted) setState(() => _loading = false);
   }
 
-  Future<void> _log(String kind, {String? subject, bool task = false}) async {
-    final subj = TextEditingController(text: subject ?? '');
-    final body = TextEditingController();
-    DateTime due = DateTime.now().add(const Duration(days: 1));
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (context, set) => AlertDialog(
-          title: Text(task ? 'New follow-up task' : 'Log ${kind == 'note' ? 'a note' : kind}'),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(controller: subj, autofocus: true, decoration: InputDecoration(labelText: task ? 'What to do' : 'Summary')),
-            if (!task) TextField(controller: body, maxLines: 3, decoration: const InputDecoration(labelText: 'Details (optional)')),
-            if (task)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.event),
-                title: Text('Due ${DateFormat('d MMM yyyy').format(due)}'),
-                onTap: () async {
-                  final d = await showDatePicker(
-                      context: context, initialDate: due, firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
-                  if (d != null) set(() => due = DateTime(d.year, d.month, d.day, 9));
-                },
-              ),
-          ]),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || subj.text.trim().isEmpty) return;
-    try {
-      await _s.db.from('activities').insert({
-        'tenant_id': _s.tenantId,
-        'contact_id': widget.contactId,
-        'kind': task ? 'task' : kind,
-        'subject': subj.text.trim(),
-        'body': body.text.trim().isEmpty ? null : body.text.trim(),
-        if (task) 'due_at': due.toUtc().toIso8601String(),
-        if (task) 'assigned_to': _s.db.auth.currentUser!.id,
-      });
-      await _load();
-    } on PostgrestException catch (e) {
-      _snack(e.message);
-    }
-  }
-
-  void _snack(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
-
-  Future<void> _call() async {
-    final p = _c!['phone'] as String?;
-    if (p == null) return;
-    await ContactLinks.call(p);
-    if (mounted) await _log('call', subject: 'Called ${_c!['name']}');
-  }
-
-  Future<void> _whatsapp() async {
-    final p = _c!['phone_norm'] as String?;
-    if (p == null) return;
-    final first = (_c!['name'] as String).split(' ').first;
-    await ContactLinks.whatsapp(p, text: 'Hi $first, ');
-    if (mounted) await _log('whatsapp', subject: 'WhatsApp to ${_c!['name']}');
-  }
-
-  Future<void> _email() async {
-    final e = _c!['email'] as String?;
-    if (e == null) return;
-    await ContactLinks.email(e, subject: _s.tenantName);
-    if (mounted) await _log('email', subject: 'Email to ${_c!['name']}');
+  Future<void> _edit() async {
+    final r = await editContact(context, _c);
+    if (r != null) _load();
   }
 
   Future<void> _adjustPoints() async {
-    final n = TextEditingController();
+    final pts = TextEditingController();
     final note = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
@@ -139,11 +182,11 @@ class _ContactScreenState extends State<ContactScreen> {
         title: const Text('Adjust points'),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           TextField(
-            controller: n,
+            controller: pts,
             keyboardType: const TextInputType.numberWithOptions(signed: true),
             decoration: const InputDecoration(labelText: 'Points (+ to add, − to remove)'),
           ),
-          TextField(controller: note, decoration: const InputDecoration(labelText: 'Reason')),
+          TextField(controller: note, decoration: const InputDecoration(labelText: 'Reason *')),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
@@ -155,207 +198,195 @@ class _ContactScreenState extends State<ContactScreen> {
     try {
       await _s.db.rpc('adjust_points', params: {
         'p_contact': widget.contactId,
-        'p_points': int.tryParse(n.text) ?? 0,
-        'p_note': note.text.trim().isEmpty ? 'Manual adjustment' : note.text.trim(),
+        'p_points': double.tryParse(pts.text) ?? 0,
+        'p_note': note.text.trim(),
       });
-      await _load();
+      _load();
     } on PostgrestException catch (e) {
-      _snack(e.message);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
 
-  Future<void> _toggleTask(Map<String, dynamic> a) async {
+  Future<void> _sendWhatsAppViaBusiness() async {
+    final body = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Send from business WhatsApp'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: body, maxLines: 4, decoration: const InputDecoration(labelText: 'Message')),
+          const SizedBox(height: 8),
+          const Text(
+            'Free text only reaches customers who messaged you in the last 24 hours. '
+            'Otherwise use "Open WhatsApp" or a campaign with an approved template.',
+            style: TextStyle(fontSize: 12),
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Send')),
+        ],
+      ),
+    );
+    if (ok != true || body.text.trim().isEmpty) return;
     try {
-      await _s.db
-          .from('activities')
-          .update({'done_at': a['done_at'] == null ? DateTime.now().toUtc().toIso8601String() : null}).eq('id', a['id'] as String);
-      await _load();
+      await _s.db.rpc('send_message', params: {'p_contact': widget.contactId, 'p_channel': 'whatsapp', 'p_body': body.text.trim()});
+      _timeline.currentState?.reload();
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Queued to send')));
     } on PostgrestException catch (e) {
-      _snack(e.message);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     }
   }
-
-  IconData _icon(String kind) => switch (kind) {
-        'call' => Icons.call,
-        'whatsapp' => Icons.chat,
-        'email' => Icons.email_outlined,
-        'meeting' => Icons.groups_outlined,
-        'visit' => Icons.storefront,
-        'task' => Icons.task_alt,
-        'system' => Icons.auto_awesome_outlined,
-        'sms' => Icons.sms_outlined,
-        _ => Icons.sticky_note_2_outlined,
-      };
 
   @override
   Widget build(BuildContext context) {
-    if (_loading || _c == null) {
-      return Scaffold(appBar: AppBar(), body: const Center(child: CircularProgressIndicator()));
-    }
-    final c = _c!;
-    final st = _stats ?? {};
-    final canEdit = _s.can('crm.contact.manage');
+    final c = _c;
     final t = Theme.of(context).textTheme;
-    final loyaltyOn = _s.loyalty?.on ?? false;
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text((c['company'] as String?) ?? c['name'] as String),
-          actions: [
-            if (canEdit)
-              IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                onPressed: () async {
-                  final id = await Navigator.of(context)
-                      .push<String>(MaterialPageRoute(builder: (_) => ContactFormScreen(existing: c)));
-                  if (id != null) _load();
-                },
-              ),
-          ],
-        ),
-        body: NestedScrollView(
-          headerSliverBuilder: (_, __) => [
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text([
-                    c['lifecycle'],
-                    if (c['company'] != null) c['name'],
-                    'score ${c['score']}',
-                  ].join(' · '), style: t.bodyMedium),
-                  if ((c['tags'] as List).isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Wrap(spacing: 6, runSpacing: 6, children: [
-                        for (final tag in (c['tags'] as List)) Chip(label: Text(tag as String), visualDensity: VisualDensity.compact),
-                      ]),
-                    ),
-                  const SizedBox(height: 12),
-                  Row(children: [
-                    _stat('Spent', _money.format(st['total_spend'] ?? 0)),
-                    _stat('Orders', '${st['orders'] ?? 0}'),
-                    if (loyaltyOn) _stat('Points', '${st['points'] ?? 0}'),
-                    if ((st['owed'] ?? 0) != 0) _stat('Owes', _money.format(st['owed'])),
-                  ]),
-                  if (st['last_purchase_at'] != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text('Last purchase ${DateFormat('d MMM yyyy').format(DateTime.parse(st['last_purchase_at'] as String).toLocal())}',
-                          style: t.bodySmall),
-                    ),
-                  const SizedBox(height: 12),
-                  Wrap(spacing: 8, runSpacing: 8, children: [
-                    if (c['phone'] != null) _action(Icons.call, 'Call', _call),
-                    if (c['phone_norm'] != null) _action(Icons.chat, 'WhatsApp', _whatsapp),
-                    if (c['email'] != null) _action(Icons.email_outlined, 'Email', _email),
-                    if (canEdit) _action(Icons.sticky_note_2_outlined, 'Note', () => _log('note')),
-                    if (canEdit) _action(Icons.groups_outlined, 'Meeting', () => _log('meeting')),
-                    if (canEdit) _action(Icons.task_alt, 'Task', () => _log('task', task: true)),
-                    if (_s.can('crm.deal.manage'))
-                      _action(Icons.handshake_outlined, 'Deal', () async {
-                        if (await DealSheet.show(context, contact: c)) _load();
-                      }),
-                  ]),
-                  const SizedBox(height: 8),
-                  Text(
-                    [
-                      c['whatsapp_opt_in'] == true ? 'WhatsApp ✓' : 'WhatsApp ✗',
-                      c['email_opt_in'] == true ? 'Email ✓' : 'Email ✗',
-                      if (c['consent_at'] != null)
-                        'consent ${DateFormat('d MMM yyyy').format(DateTime.parse(c['consent_at'] as String).toLocal())}',
-                    ].join(' · '),
-                    style: t.bodySmall,
-                  ),
-                ]),
-              ),
-            ),
-            const SliverToBoxAdapter(child: TabBar(tabs: [Tab(text: 'Timeline'), Tab(text: 'Deals'), Tab(text: 'Points')])),
-          ],
-          body: TabBarView(children: [
-            _timeline(),
-            _dealsTab(),
-            _pointsTab(loyaltyOn),
-          ]),
-        ),
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(c?['name'] as String? ?? ''),
+        actions: [
+          if (c != null && _s.can('crm.contact.manage')) IconButton(onPressed: _edit, icon: const Icon(Icons.edit_outlined)),
+        ],
       ),
+      body: _loading || c == null
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _load,
+              child: ListView(padding: const EdgeInsets.all(16), children: [
+                if (c['company'] != null) Text(c['company'] as String, style: t.titleMedium),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  Chip(label: Text(c['lifecycle'] as String)),
+                  if (c['marketing_consent'] == true) const Chip(avatar: Icon(Icons.check, size: 16), label: Text('Offers OK')),
+                  for (final tag in ((c['tags'] as List?) ?? [])) Chip(label: Text('#$tag')),
+                ]),
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, children: [
+                  if (c['phone'] != null) ...[
+                    FilledButton.tonalIcon(onPressed: () => callPhone(c['phone'] as String), icon: const Icon(Icons.call), label: const Text('Call')),
+                    FilledButton.tonalIcon(
+                      onPressed: () => openWhatsApp(c['phone'] as String, text: 'Hi ${(c['name'] as String).split(' ').first}, '),
+                      icon: const Icon(Icons.chat),
+                      label: const Text('Open WhatsApp'),
+                    ),
+                  ],
+                  if (c['email'] != null)
+                    FilledButton.tonalIcon(onPressed: () => sendEmail(c['email'] as String), icon: const Icon(Icons.email), label: const Text('Email')),
+                  if (c['phone'] != null && (_s.can('crm.deal.manage') || _s.can('crm.contact.manage')))
+                    OutlinedButton.icon(
+                      onPressed: _sendWhatsAppViaBusiness,
+                      icon: const Icon(Icons.send_outlined),
+                      label: const Text('Send from business'),
+                    ),
+                ]),
+                const SizedBox(height: 12),
+                Row(children: [
+                  _stat('Spent', _money.format(c['total_spent'])),
+                  _stat('Visits', '${c['visits']}'),
+                  _stat('Points', '${((c['loyalty_points'] ?? 0) as num).toInt()}',
+                      onTap: _s.can('crm.loyalty.adjust') ? _adjustPoints : null),
+                ]),
+                if (c['last_purchase_at'] != null)
+                  Text('Last purchase ${DateFormat('d MMM yyyy').format(DateTime.parse(c['last_purchase_at'] as String).toLocal())}',
+                      style: t.bodySmall),
+                const SizedBox(height: 8),
+                ...[
+                  if (c['phone'] != null) ('Phone', c['phone']),
+                  if (c['email'] != null) ('Email', c['email']),
+                  if (c['tin'] != null) ('TIN', c['tin']),
+                  if (c['birthday'] != null) ('Birthday', DateFormat('d MMMM').format(DateTime.parse(c['birthday'] as String))),
+                  if (c['source'] != null) ('Source', c['source']),
+                  if (c['notes'] != null) ('Notes', c['notes']),
+                ].map((e) => ListTile(dense: true, contentPadding: EdgeInsets.zero, title: Text(e.$1), subtitle: Text('${e.$2}'))),
+                const Divider(),
+                if (_s.can('crm.deal.view')) ...[
+                  Row(children: [
+                    Text('Leads & deals', style: t.titleMedium),
+                    const Spacer(),
+                    if (_s.can('crm.deal.manage'))
+                      TextButton.icon(
+                        onPressed: () async {
+                          await Navigator.of(context).push(MaterialPageRoute(
+                              builder: (_) => DealScreen(contactId: widget.contactId, contactName: c['name'] as String)));
+                          _load();
+                        },
+                        icon: const Icon(Icons.add),
+                        label: const Text('New lead'),
+                      ),
+                  ]),
+                  for (final d in _deals)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(d['title'] as String),
+                      subtitle: Text('${d['stage_name']} · score ${d['score']}'),
+                      trailing: Text(_money.format(d['value'])),
+                      onTap: () async {
+                        await Navigator.of(context).push(MaterialPageRoute(builder: (_) => DealScreen(dealId: d['id'] as String)));
+                        _load();
+                      },
+                    ),
+                  if (_deals.isEmpty) const Text('None'),
+                  const Divider(),
+                ],
+                Timeline(key: _timeline, contactId: widget.contactId),
+                if (_sales.isNotEmpty) ...[
+                  const Divider(),
+                  Text('Purchases', style: t.titleMedium),
+                  for (final sale in _sales)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(sale['receipt_no'] as String,
+                          style: TextStyle(decoration: sale['status'] != 'completed' ? TextDecoration.lineThrough : null)),
+                      subtitle: Text(DateFormat('d MMM yyyy').format(DateTime.parse(sale['sold_at'] as String).toLocal())),
+                      trailing: Text(_money.format(sale['total'])),
+                    ),
+                ],
+                if (_invoices.isNotEmpty) ...[
+                  const Divider(),
+                  Text('Invoices', style: t.titleMedium),
+                  for (final i in _invoices)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(i['number'] as String? ?? 'Draft'),
+                      subtitle: Text(i['overdue'] == true ? 'OVERDUE' : i['status'] as String),
+                      trailing: Text(_money.format(i['total'])),
+                    ),
+                ],
+                if (_points.isNotEmpty) ...[
+                  const Divider(),
+                  Text('Points history', style: t.titleMedium),
+                  for (final p in _points)
+                    ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('${p['reason']}${p['note'] != null ? ' — ${p['note']}' : ''}'),
+                      subtitle: Text(DateFormat('d MMM yyyy').format(DateTime.parse(p['at'] as String).toLocal())),
+                      trailing: Text('${(p['points'] as num) > 0 ? '+' : ''}${(p['points'] as num).toInt()}'),
+                    ),
+                ],
+                const SizedBox(height: 40),
+              ]),
+            ),
     );
   }
 
-  Widget _stat(String label, String value) => Expanded(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: Theme.of(context).textTheme.labelSmall),
-          FittedBox(child: Text(value, style: Theme.of(context).textTheme.titleMedium)),
-        ]),
+  Widget _stat(String label, String value, {VoidCallback? onTap}) => Expanded(
+        child: Card(
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Text(label, style: Theme.of(context).textTheme.bodySmall),
+                  if (onTap != null) const Icon(Icons.edit, size: 12),
+                ]),
+                FittedBox(child: Text(value, style: Theme.of(context).textTheme.titleMedium)),
+              ]),
+            ),
+          ),
+        ),
       );
-
-  Widget _action(IconData icon, String label, VoidCallback onTap) =>
-      ActionChip(avatar: Icon(icon, size: 18), label: Text(label), onPressed: onTap);
-
-  Widget _timeline() {
-    if (_acts.isEmpty) return const Center(child: Text('No activity yet'));
-    return ListView.builder(
-      itemCount: _acts.length,
-      itemBuilder: (_, i) {
-        final a = _acts[i];
-        final isTask = a['kind'] == 'task';
-        final done = a['done_at'] != null;
-        return ListTile(
-          leading: isTask
-              ? Checkbox(value: done, onChanged: _s.can('crm.contact.manage') ? (_) => _toggleTask(a) : null)
-              : Icon(_icon(a['kind'] as String)),
-          title: Text(a['subject'] as String, style: TextStyle(decoration: isTask && done ? TextDecoration.lineThrough : null)),
-          subtitle: Text([
-            if (a['body'] != null) a['body'],
-            isTask && a['due_at'] != null
-                ? 'due ${_dt.format(DateTime.parse(a['due_at'] as String).toLocal())}'
-                : _dt.format(DateTime.parse(a['created_at'] as String).toLocal()),
-          ].join('\n')),
-          isThreeLine: a['body'] != null,
-        );
-      },
-    );
-  }
-
-  Widget _dealsTab() {
-    if (_deals.isEmpty) return const Center(child: Text('No deals yet'));
-    return ListView(children: [
-      for (final d in _deals)
-        ListTile(
-          leading: Icon(switch (d['status']) {
-            'won' => Icons.emoji_events_outlined,
-            'lost' => Icons.cancel_outlined,
-            _ => Icons.handshake_outlined,
-          }),
-          title: Text(d['title'] as String),
-          subtitle: Text('${d['pipeline_stages']?['name'] ?? ''}'
-              '${d['expected_close'] != null ? ' · close by ${d['expected_close']}' : ''}'),
-          trailing: Text(_money.format(d['value'])),
-          onTap: _s.can('crm.deal.manage')
-              ? () async {
-                  if (await DealSheet.show(context, deal: d)) _load();
-                }
-              : null,
-        ),
-    ]);
-  }
-
-  Widget _pointsTab(bool on) {
-    return ListView(children: [
-      if (!on) const ListTile(title: Text('Loyalty points are off. Turn them on in More → Loyalty.')),
-      if (on && _s.can('crm.loyalty.manage'))
-        ListTile(leading: const Icon(Icons.tune), title: const Text('Adjust points'), onTap: _adjustPoints),
-      for (final p in _points)
-        ListTile(
-          dense: true,
-          title: Text(p['note'] as String? ?? p['kind'] as String),
-          subtitle: Text('${p['kind']} · ${_dt.format(DateTime.parse(p['created_at'] as String).toLocal())}'),
-          trailing: Text('${(p['points'] as int) > 0 ? '+' : ''}${p['points']}',
-              style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: (p['points'] as int) < 0 ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primary)),
-        ),
-    ]);
-  }
 }

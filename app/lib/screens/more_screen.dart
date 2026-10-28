@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/session.dart';
+import 'crm_settings_screen.dart';
 import 'reports_screen.dart';
 import 'sales_history_screen.dart';
 import 'shift_screen.dart';
@@ -66,6 +67,13 @@ class _MoreScreenState extends State<MoreScreen> {
           title: const Text('Reports'),
           subtitle: const Text('Sales, profit & loss, tax, trial balance'),
           onTap: () => _go(const ReportsScreen()),
+        ),
+      if (s.can('crm.settings.manage') || s.can('crm.campaign.manage'))
+        ListTile(
+          leading: const Icon(Icons.loyalty_outlined),
+          title: const Text('CRM settings'),
+          subtitle: const Text('Loyalty points, website form, WhatsApp & email'),
+          onTap: () => _go(const CrmSettingsScreen()),
         ),
       ListTile(
         leading: const Icon(Icons.percent),

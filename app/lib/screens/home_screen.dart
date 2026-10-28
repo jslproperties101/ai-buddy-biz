@@ -3,11 +3,11 @@ import 'package:flutter/material.dart';
 import '../services/catalog.dart';
 import '../services/sales_queue.dart';
 import '../services/session.dart';
+import 'catalog_screen.dart';
+import 'crm_screen.dart';
 import 'invoices_screen.dart';
 import 'more_screen.dart';
 import 'pos_screen.dart';
-import 'products_screen.dart';
-import 'stock_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -69,9 +69,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final tabs = <(String, IconData, Widget)>[
       if (s.can('pos.sale.create')) ('Sell', Icons.point_of_sale, PosScreen(onSaleDone: _refreshPending)),
       if (s.can('inv.product.view'))
-        ('Products', Icons.inventory_2_outlined, ProductsScreen(onChanged: () => _sync(silent: true))),
-      if (s.can('inv.product.view')) ('Stock', Icons.warehouse_outlined, const StockScreen()),
+        ('Catalog', Icons.inventory_2_outlined, CatalogScreen(onChanged: () => _sync(silent: true))),
       if (s.can('fin.invoice.view')) ('Invoices', Icons.receipt_long_outlined, const InvoicesScreen()),
+      if (s.can('crm.deal.view') || s.can('crm.contact.view')) ('CRM', Icons.people_alt_outlined, const CrmScreen()),
       ('More', Icons.menu, MoreScreen(onOutletChanged: () => _sync(silent: true))),
     ];
     if (_tab >= tabs.length) _tab = 0;

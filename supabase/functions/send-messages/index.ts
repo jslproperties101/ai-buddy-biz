@@ -1,160 +1,185 @@
-// Ai buddy Biz — send-messages
-// Sends a queued campaign in batches over WhatsApp Cloud API or email (Resend).
+// Ai buddy Biz — outbound message sender (Supabase Edge Function, Deno)
 //
-// Call from the app:  supabase.functions.invoke('send-messages', { body: { campaign_id } })
-// The caller must be allowed to manage campaigns (checked with their own login).
-// Call repeatedly until { remaining: 0 }.
+// Sends queued rows from public.outbound_messages:
+//   whatsapp → WhatsApp Cloud API (Meta). Template messages for campaigns / business-initiated chats,
+//              plain text only works inside the customer's 24-hour reply window.
+//   email    → Resend (https://resend.com)
+//   sms      → Twilio
 //
-// Secrets (supabase secrets set …):
-//   WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, GRAPH_API_VERSION (default v22.0)
-//   RESEND_API_KEY, EMAIL_FROM (e.g. "Kedai Joe <hello@yourdomain.com>")
-// SUPABASE_URL, SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are provided by Supabase.
+// Credentials are per business, stored in public.integration_secrets (never readable by app users):
+//   whatsapp_cloud: {"phone_number_id":"…","token":"…","api_version":"v21.0"}
+//   resend:         {"api_key":"re_…","from":"Shop <hello@yourdomain.com>"}
+//   twilio:         {"account_sid":"AC…","auth_token":"…","from":"+60…"}
+//
+// Run it every minute with Supabase Cron (see README), or call it by hand:
+//   curl -X POST https://<project>.supabase.co/functions/v1/send-messages -H "Authorization: Bearer <SERVICE_ROLE_KEY>"
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
-const BATCH = 40;
-const cors = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-type Recipient = {
-  id: number;
+type Msg = {
+  id: string;
+  tenant_id: string;
+  campaign_id: string | null;
+  channel: "whatsapp" | "email" | "sms";
   to_address: string;
-  contacts: { name: string; email: string | null } | null;
-  contact_id: string;
+  subject: string | null;
+  body: string;
+  wa_template: string | null;
+  wa_language: string | null;
+  wa_params: string[] | null;
+  attempts: number;
 };
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
-}
+type Result = { ok: true; providerId?: string } | { ok: false; error: string; retry: boolean };
 
-function fill(text: string, vars: Record<string, string>) {
-  return text.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? "");
-}
-
-function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
-}
-
-async function sendWhatsApp(to: string, campaign: any, vars: Record<string, string>) {
-  const token = Deno.env.get("WHATSAPP_TOKEN");
-  const phoneId = Deno.env.get("WHATSAPP_PHONE_NUMBER_ID");
-  const ver = Deno.env.get("GRAPH_API_VERSION") ?? "v22.0";
-  if (!token || !phoneId) throw new Error("WhatsApp is not set up (WHATSAPP_TOKEN / WHATSAPP_PHONE_NUMBER_ID)");
-
-  // Outside the 24-hour customer service window only approved templates are delivered.
-  const body = campaign.wa_template_name
-    ? {
-        messaging_product: "whatsapp",
-        to,
-        type: "template",
-        template: {
-          name: campaign.wa_template_name,
-          language: { code: campaign.wa_template_lang || "en" },
-          components: (campaign.wa_template_params ?? []).length
-            ? [{
-                type: "body",
-                parameters: (campaign.wa_template_params as string[]).map((p) => ({ type: "text", text: vars[p] || "-" })),
-              }]
-            : [],
-        },
-      }
-    : { messaging_product: "whatsapp", to, type: "text", text: { body: fill(campaign.message, vars) } };
-
-  const res = await fetch(`https://graph.facebook.com/${ver}/${phoneId}/messages`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const out = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(out?.error?.message ?? `WhatsApp error ${res.status}`);
-  return out?.messages?.[0]?.id as string | undefined;
-}
-
-async function sendEmail(to: string, campaign: any, vars: Record<string, string>) {
-  const key = Deno.env.get("RESEND_API_KEY");
-  const from = Deno.env.get("EMAIL_FROM");
-  if (!key || !from) throw new Error("Email is not set up (RESEND_API_KEY / EMAIL_FROM)");
-  const text = fill(campaign.message, vars);
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      from,
-      to: [to],
-      subject: fill(campaign.subject || campaign.name, vars),
-      text,
-      html: `<div style="font-family:sans-serif;line-height:1.5">${escapeHtml(text).replace(/\n/g, "<br>")}</div>`,
-    }),
-  });
-  const out = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(out?.message ?? `Email error ${res.status}`);
-  return out?.id as string | undefined;
-}
+const BATCH = 50;
+const MAX_ATTEMPTS = 3;
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (req.method !== "POST") return json({ error: "POST only" }, 405);
-
   const url = Deno.env.get("SUPABASE_URL")!;
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const auth = req.headers.get("Authorization") ?? "";
-  const { campaign_id } = await req.json().catch(() => ({}));
-  if (!campaign_id) return json({ error: "campaign_id is required" }, 400);
+  if (auth !== `Bearer ${serviceKey}`) return new Response("Unauthorized", { status: 401 });
 
-  // 1. Permission check with the caller's own login (RLS: crm.campaign.manage)
-  const asUser = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } } });
-  const { data: mine } = await asUser.from("campaigns").select("id").eq("id", campaign_id).maybeSingle();
-  if (!mine) return json({ error: "Campaign not found or not allowed" }, 403);
+  const db = createClient(url, serviceKey, { auth: { persistSession: false } });
 
-  // 2. Do the work with the service role
-  const admin = createClient(url, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const { data: campaign } = await admin.from("campaigns").select("*, tenants(name)").eq("id", campaign_id).single();
-  if (!campaign || !["queued", "sending"].includes(campaign.status)) {
-    return json({ error: `Campaign is ${campaign?.status ?? "missing"}` }, 400);
-  }
-  await admin.from("campaigns").update({ status: "sending" }).eq("id", campaign_id).eq("status", "queued");
-
-  const { data: batch } = await admin
-    .from("campaign_recipients")
-    .select("id, to_address, contact_id, contacts(name, email)")
-    .eq("campaign_id", campaign_id)
+  // Claim a batch so two overlapping runs don't send the same message twice
+  const { data: queued, error } = await db
+    .from("outbound_messages")
+    .select("id")
     .eq("status", "queued")
-    .order("id")
+    .lte("send_after", new Date().toISOString())
+    .order("created_at")
     .limit(BATCH);
+  if (error) return json({ error: error.message }, 500);
+  const ids = ((queued ?? []) as { id: string }[]).map((r) => r.id);
+  if (ids.length === 0) return json({ sent: 0, failed: 0 });
+
+  const { data: claimed, error: claimErr } = await db
+    .from("outbound_messages")
+    .update({ status: "sending" })
+    .in("id", ids)
+    .eq("status", "queued")
+    .select("*");
+  if (claimErr) return json({ error: claimErr.message }, 500);
+
+  const secrets = new Map<string, Record<string, string>>();
+  const getSecret = async (tenant: string, provider: string) => {
+    const key = `${tenant}:${provider}`;
+    if (!secrets.has(key)) {
+      const { data } = await db.from("integration_secrets").select("config").eq("tenant_id", tenant).eq("provider", provider).maybeSingle();
+      secrets.set(key, (data?.config as Record<string, string>) ?? {});
+    }
+    return secrets.get(key)!;
+  };
 
   let sent = 0, failed = 0;
-  const errors: string[] = [];
-  for (const r of (batch ?? []) as unknown as Recipient[]) {
-    const name = r.contacts?.name ?? "";
-    const { data: pts } = await admin.rpc("points_balance", { p_contact: r.contact_id });
-    const vars = {
-      name,
-      first_name: name.split(/\s+/)[0] ?? name,
-      points: String(pts ?? 0),
-      business: campaign.tenants?.name ?? "",
-    };
+  const campaigns = new Set<string>();
+
+  for (const m of (claimed ?? []) as Msg[]) {
+    let r: Result;
     try {
-      const id = campaign.channel === "whatsapp"
-        ? await sendWhatsApp(r.to_address, campaign, vars)
-        : await sendEmail(r.to_address, campaign, vars);
-      await admin.rpc("campaign_mark", { p_recipient: r.id, p_ok: true, p_provider_id: id ?? null, p_error: null });
-      sent++;
+      r = await send(m, getSecret);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      // A setup problem stops the run instead of failing every recipient
-      if (msg.includes("is not set up")) return json({ error: msg, sent, failed }, 400);
-      await admin.rpc("campaign_mark", { p_recipient: r.id, p_ok: false, p_provider_id: null, p_error: msg.slice(0, 500) });
-      failed++;
-      if (errors.length < 3) errors.push(msg);
+      r = { ok: false, error: String(e), retry: true };
     }
+    const attempts = m.attempts + 1;
+    if (r.ok) {
+      sent++;
+      await db.from("outbound_messages").update({
+        status: "sent", sent_at: new Date().toISOString(), provider_id: r.providerId ?? null, attempts, error: null,
+      }).eq("id", m.id);
+    } else if (r.retry && attempts < MAX_ATTEMPTS) {
+      // back off 5, 25 minutes
+      const wait = 5 * Math.pow(5, attempts - 1) * 60_000;
+      await db.from("outbound_messages").update({
+        status: "queued", attempts, error: r.error, send_after: new Date(Date.now() + wait).toISOString(),
+      }).eq("id", m.id);
+    } else {
+      failed++;
+      await db.from("outbound_messages").update({ status: "failed", attempts, error: r.error }).eq("id", m.id);
+    }
+    if (m.campaign_id) campaigns.add(m.campaign_id);
   }
 
-  const { count } = await admin
-    .from("campaign_recipients")
-    .select("id", { count: "exact", head: true })
-    .eq("campaign_id", campaign_id)
-    .eq("status", "queued");
-
-  return json({ sent, failed, remaining: count ?? 0, errors });
+  for (const c of campaigns) await db.rpc("campaign_refresh_counts", { p_campaign: c });
+  return json({ claimed: claimed?.length ?? 0, sent, failed });
 });
+
+async function send(m: Msg, getSecret: (t: string, p: string) => Promise<Record<string, string>>): Promise<Result> {
+  switch (m.channel) {
+    case "whatsapp": return sendWhatsApp(m, await getSecret(m.tenant_id, "whatsapp_cloud"));
+    case "email": return sendEmail(m, await getSecret(m.tenant_id, "resend"));
+    case "sms": return sendSms(m, await getSecret(m.tenant_id, "twilio"));
+  }
+}
+
+async function sendWhatsApp(m: Msg, cfg: Record<string, string>): Promise<Result> {
+  if (!cfg.phone_number_id || !cfg.token) return { ok: false, error: "WhatsApp is not connected for this business", retry: false };
+  const version = cfg.api_version || "v21.0";
+  const to = m.to_address.replace(/\D/g, "");
+  const payload = m.wa_template
+    ? {
+      messaging_product: "whatsapp",
+      to,
+      type: "template",
+      template: {
+        name: m.wa_template,
+        language: { code: m.wa_language || "en" },
+        ...(m.wa_params && m.wa_params.length
+          ? { components: [{ type: "body", parameters: m.wa_params.map((t) => ({ type: "text", text: String(t) })) }] }
+          : {}),
+      },
+    }
+    : { messaging_product: "whatsapp", to, type: "text", text: { body: m.body, preview_url: true } };
+
+  const res = await fetch(`https://graph.facebook.com/${version}/${cfg.phone_number_id}/messages`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.ok) return { ok: true, providerId: body?.messages?.[0]?.id };
+  const err = body?.error?.message ?? `HTTP ${res.status}`;
+  return { ok: false, error: err, retry: res.status === 429 || res.status >= 500 };
+}
+
+async function sendEmail(m: Msg, cfg: Record<string, string>): Promise<Result> {
+  if (!cfg.api_key || !cfg.from) return { ok: false, error: "Email is not connected for this business", retry: false };
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${cfg.api_key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: cfg.from,
+      to: [m.to_address],
+      subject: m.subject ?? "",
+      text: m.body + "\n\nTo stop receiving these messages, reply STOP.",
+    }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.ok) return { ok: true, providerId: body?.id };
+  return { ok: false, error: body?.message ?? `HTTP ${res.status}`, retry: res.status === 429 || res.status >= 500 };
+}
+
+async function sendSms(m: Msg, cfg: Record<string, string>): Promise<Result> {
+  if (!cfg.account_sid || !cfg.auth_token || !cfg.from) return { ok: false, error: "SMS is not connected for this business", retry: false };
+  const form = new URLSearchParams({ To: "+" + m.to_address.replace(/\D/g, ""), From: cfg.from, Body: m.body });
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${cfg.account_sid}/Messages.json`, {
+    method: "POST",
+    headers: {
+      Authorization: "Basic " + btoa(`${cfg.account_sid}:${cfg.auth_token}`),
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: form,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.ok) return { ok: true, providerId: body?.sid };
+  return { ok: false, error: body?.message ?? `HTTP ${res.status}`, retry: res.status === 429 || res.status >= 500 };
+}
+
+function json(v: unknown, status = 200) {
+  return new Response(JSON.stringify(v), { status, headers: { "Content-Type": "application/json" } });
+}
+
+// Silence unused-type warning in editors without Deno types
+export type { SupabaseClient };

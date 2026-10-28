@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/catalog.dart';
 import '../services/printing_service.dart';
 import '../services/session.dart';
+import '../widgets/contact_picker.dart';
 
 class _Line {
   String? variantId;
@@ -110,11 +111,7 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
 
   // ---- customer ----
   Future<void> _pickContact() async {
-    final picked = await showModalBottomSheet<Map<String, dynamic>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => const _ContactPicker(),
-    );
+    final picked = await ContactPicker.show(context);
     if (picked != null) setState(() => _contact = picked);
   }
 
@@ -585,120 +582,6 @@ class _ProductPickerState extends State<_ProductPicker> {
                   trailing: Text(v.price.toStringAsFixed(2)),
                   onTap: () => Navigator.pop(context, v),
                 ),
-            ]),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-class _ContactPicker extends StatefulWidget {
-  const _ContactPicker();
-  @override
-  State<_ContactPicker> createState() => _ContactPickerState();
-}
-
-class _ContactPickerState extends State<_ContactPicker> {
-  List<Map<String, dynamic>> _rows = [];
-  String _q = '';
-  Session get _s => Session.instance;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      var q = _s.db.from('contacts').select().eq('tenant_id', _s.tenantId!).inFilter('kind', ['customer', 'both']);
-      if (_q.isNotEmpty) q = q.or('name.ilike.%$_q%,company.ilike.%$_q%,phone.ilike.%$_q%');
-      final rows = await q.order('name').limit(50);
-      if (mounted) setState(() => _rows = List<Map<String, dynamic>>.from(rows));
-    } catch (_) {}
-  }
-
-  Future<void> _new() async {
-    final f = {
-      'name': TextEditingController(text: _q),
-      'company': TextEditingController(),
-      'email': TextEditingController(),
-      'phone': TextEditingController(),
-      'tin': TextEditingController(),
-      'reg_no': TextEditingController(),
-    };
-    const labels = {
-      'name': 'Contact name *',
-      'company': 'Company (optional)',
-      'email': 'Email',
-      'phone': 'Phone',
-      'tin': 'Tax ID (TIN) — for e-invoices',
-      'reg_no': 'Business reg. no.',
-    };
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('New customer'),
-        content: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            for (final e in f.entries) TextField(controller: e.value, decoration: InputDecoration(labelText: labels[e.key])),
-          ]),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Add')),
-        ],
-      ),
-    );
-    if (ok != true || f['name']!.text.trim().isEmpty) return;
-    try {
-      final row = await _s.db
-          .from('contacts')
-          .insert({
-            'tenant_id': _s.tenantId,
-            'kind': 'customer',
-            for (final e in f.entries) e.key: e.value.text.trim().isEmpty ? null : e.value.text.trim(),
-          })
-          .select()
-          .single();
-      if (mounted) Navigator.pop(context, row);
-    } on PostgrestException catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.75,
-        child: Column(children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(children: [
-              Expanded(
-                child: TextField(
-                  autofocus: true,
-                  decoration: const InputDecoration(hintText: 'Search customers', prefixIcon: Icon(Icons.search)),
-                  onChanged: (v) {
-                    _q = v.trim();
-                    _load();
-                  },
-                ),
-              ),
-              if (_s.can('crm.contact.manage')) IconButton.filled(onPressed: _new, icon: const Icon(Icons.person_add_alt)),
-            ]),
-          ),
-          Expanded(
-            child: ListView(children: [
-              for (final c in _rows)
-                ListTile(
-                  title: Text(c['company'] as String? ?? c['name'] as String),
-                  subtitle: Text([if (c['company'] != null) c['name'], c['phone'], c['email']].whereType<String>().join(' · ')),
-                  onTap: () => Navigator.pop(context, c),
-                ),
-              if (_rows.isEmpty) const ListTile(title: Text('No customers yet — tap + to add one')),
             ]),
           ),
         ]),

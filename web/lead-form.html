@@ -1,0 +1,64 @@
+<!doctype html>
+<!--
+  Ai buddy Biz — website lead form.
+  Paste this on any website (or open it as a page). Replace the three values below:
+    SUPABASE_URL      e.g. https://abcd1234.supabase.co
+    SUPABASE_ANON_KEY the project's public anon key (safe to publish)
+    FORM_KEY          from the app: More → CRM settings → Website lead form
+  Each submission creates (or matches) a customer and adds a lead to the "New" stage.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contact us</title>
+<style>
+  :root { --fg:#111; --bg:#fff; --muted:#666; --accent:#0f766e; --line:#ddd; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#eee; --bg:#121212; --muted:#aaa; --line:#333; --accent:#2dd4bf; } }
+  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); margin: 0; padding: 16px; }
+  form { max-width: 420px; margin: 0 auto; display: grid; gap: 12px; }
+  label { display: grid; gap: 4px; font-size: 14px; }
+  input, textarea { font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; }
+  button { font: inherit; padding: 12px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; }
+  .check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--muted); }
+  #msg { min-height: 1.2em; }
+</style>
+</head>
+<body>
+<form id="f">
+  <h2>Get in touch</h2>
+  <label>Name <input name="name" required maxlength="120"></label>
+  <label>Phone / WhatsApp <input name="phone" type="tel" maxlength="40"></label>
+  <label>Email <input name="email" type="email" maxlength="160"></label>
+  <label>What are you interested in? <input name="interest" maxlength="160"></label>
+  <label>Message <textarea name="message" rows="4" maxlength="2000"></textarea></label>
+  <label class="check"><input type="checkbox" name="marketing_consent"> I agree to receive offers and updates. I can opt out anytime.</label>
+  <button>Send</button>
+  <div id="msg" role="status"></div>
+</form>
+<script>
+  const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
+  const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
+  const FORM_KEY = "YOUR-FORM-KEY";
+
+  const f = document.getElementById("f"), msg = document.getElementById("msg");
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(f));
+    if (!d.phone && !d.email) { msg.textContent = "Please give a phone number or email."; return; }
+    d.marketing_consent = !!d.marketing_consent;
+    d.source = new URLSearchParams(location.search).get("utm_source") || "website";
+    msg.textContent = "Sending…";
+    try {
+      const r = await fetch(SUPABASE_URL + "/rest/v1/rpc/capture_lead", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY },
+        body: JSON.stringify({ p_form_key: FORM_KEY, p: d }),
+      });
+      if (!r.ok) throw new Error((await r.json()).message || r.statusText);
+      f.reset(); msg.textContent = "Thanks! We'll be in touch soon.";
+    } catch (err) { msg.textContent = "Sorry, that didn't send: " + err.message; }
+  });
+</script>
+</body>
+</html>

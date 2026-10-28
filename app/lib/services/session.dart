@@ -12,21 +12,6 @@ class Outlet {
   Outlet(this.id, this.name, this.kind, this.countryCode, this.region);
 }
 
-class LoyaltySettings {
-  final bool enabled;
-  final double pointsPerUnit;
-  final double redeemValue;
-  final int minRedeem;
-  LoyaltySettings(this.enabled, this.pointsPerUnit, this.redeemValue, this.minRedeem);
-  static LoyaltySettings fromJson(Map<String, dynamic> j) => LoyaltySettings(
-        j['enabled'] as bool,
-        (j['points_per_unit'] as num).toDouble(),
-        (j['redeem_value'] as num).toDouble(),
-        (j['min_redeem'] as num).toInt(),
-      );
-  bool get on => enabled;
-}
-
 class TaxRate {
   final String code;
   final double rate;
@@ -62,9 +47,6 @@ class Session {
   String? openShiftId;
   double openShiftCash = 0;
 
-  /// Loyalty programme settings (null when off)
-  LoyaltySettings? loyalty;
-
   bool can(String perm) => perms.contains(perm);
 
   /// Returns false when the user has no business yet.
@@ -91,25 +73,11 @@ class Session {
     final rp = await db.from('role_permissions').select('permission_code').eq('role_id', m['role_id']);
     perms = {for (final r in rp) r['permission_code'] as String};
 
-    await loadLoyalty();
     await reloadOutlets();
     final savedOutlet = prefs.getString('outlet_id');
     outlet = outlets.where((o) => o.id == savedOutlet).firstOrNull ?? (outlets.isEmpty ? null : outlets.first);
     await _loadOutletState();
     return true;
-  }
-
-  Future<void> loadLoyalty() async {
-    final prefs = await SharedPreferences.getInstance();
-    final key = 'loyalty_$tenantId';
-    try {
-      final r = await db.from('loyalty_settings').select().eq('tenant_id', tenantId!).maybeSingle();
-      loyalty = r == null ? null : LoyaltySettings.fromJson(r);
-      if (r != null) await prefs.setString(key, jsonEncode(r));
-    } catch (_) {
-      final raw = prefs.getString(key);
-      loyalty = raw == null ? null : LoyaltySettings.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-    }
   }
 
   Future<void> reloadOutlets() async {

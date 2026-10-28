@@ -3,10 +3,10 @@ import 'package:flutter/material.dart';
 import 'products_screen.dart';
 import 'stock_screen.dart';
 
-/// Products and Stock side by side, so the bottom bar has room for Customers.
-class ItemsScreen extends StatelessWidget {
+/// Products and Stock under one tab.
+class CatalogScreen extends StatelessWidget {
   final VoidCallback onChanged;
-  const ItemsScreen({super.key, required this.onChanged});
+  const CatalogScreen({super.key, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {

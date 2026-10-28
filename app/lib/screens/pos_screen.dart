@@ -4,9 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../services/catalog.dart';
+import '../services/crm.dart';
 import '../services/printing_service.dart';
 import '../services/sales_queue.dart';
 import '../services/session.dart';
+import '../widgets/contact_picker.dart';
 import 'scanner_screen.dart';
 
 class CartLine {
@@ -40,6 +42,7 @@ class _PosScreenState extends State<PosScreen> {
   final _search = TextEditingController();
   final List<CartLine> _cart = [];
   bool _paying = false;
+  Map<String, dynamic>? _customer;
 
   NumberFormat get _money => NumberFormat.currency(symbol: '${Session.instance.currency} ');
   double get _subtotal => _cart.fold<double>(0.0, (a, l) => a + l.gross);
@@ -127,10 +130,25 @@ class _PosScreenState extends State<PosScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No outlet selected')));
       return;
     }
-    final result = await showModalBottomSheet<(String, double)>(
+    // Points need a live balance; offline sales can't redeem
+    double points = 0;
+    if (_customer != null && Crm.instance.loyalty.enabled) {
+      try {
+        final c = await s.db.from('contacts').select('loyalty_points').eq('id', _customer!['id']).single();
+        points = ((c['loyalty_points'] ?? 0) as num).toDouble();
+        _customer!['loyalty_points'] = points;
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    final result = await showModalBottomSheet<PayResult>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _PaySheet(total: _total, money: _money),
+      builder: (_) => PaySheet(
+        total: _total,
+        money: _money,
+        maxPoints: Crm.instance.loyalty.redeemable(points, _total),
+        pointsBalance: points,
+      ),
     );
     if (result == null) return;
 
@@ -140,6 +158,7 @@ class _PosScreenState extends State<PosScreen> {
       if (s.openShiftId != null) 'shift_id': s.openShiftId,
       'currency': s.currency,
       'sold_at': DateTime.now().toUtc().toIso8601String(),
+      if (_customer != null) 'customer_id': _customer!['id'],
       'lines': [
         for (final l in _cart)
           {
@@ -150,16 +169,22 @@ class _PosScreenState extends State<PosScreen> {
           }
       ],
       'payments': [
-        {'method': result.$1, 'amount': result.$2}
+        if (result.pointsAmount > 0) {'method': 'loyalty', 'amount': result.pointsAmount},
+        if (result.amount > 0) {'method': result.method, 'amount': result.amount},
       ],
     };
     final snapshot = List<CartLine>.from(_cart);
     final totals = (_subtotal, _discount, _tax, _total);
+    final customer = _customer;
+    final rules = Crm.instance.loyalty;
 
     setState(() => _paying = true);
     try {
       final r = await SalesQueue.instance.submit(payload);
-      setState(() => _cart.clear());
+      setState(() {
+        _cart.clear();
+        _customer = null;
+      });
       widget.onSaleDone();
       if (!mounted) return;
       await showDialog<void>(
@@ -171,9 +196,10 @@ class _PosScreenState extends State<PosScreen> {
             if (r.receiptNo != null) Text('Receipt ${r.receiptNo}'),
             if (r.outcome == SaleOutcome.queued) const Text('It will sync when you are back online.'),
             const SizedBox(height: 8),
-            if (result.$1 == 'cash' && result.$2 > totals.$4)
-              Text('Change: ${_money.format(result.$2 - totals.$4)}',
-                  style: Theme.of(context).textTheme.headlineSmall),
+            if (result.change > 0)
+              Text('Change: ${_money.format(result.change)}', style: Theme.of(context).textTheme.headlineSmall),
+            if (customer != null && rules.enabled && r.outcome == SaleOutcome.synced)
+              Text('${customer['name']} earned ~${((totals.$4 - result.pointsAmount) * rules.pointsPerUnit).floor()} points'),
           ]),
           actions: [
             TextButton(
@@ -184,8 +210,8 @@ class _PosScreenState extends State<PosScreen> {
                 discount: totals.$2,
                 tax: totals.$3,
                 total: totals.$4,
-                paidMethod: result.$1,
-                paid: result.$2,
+                paidMethod: result.pointsAmount > 0 ? 'points+${result.method}' : result.method,
+                paid: result.pointsAmount + result.amount,
               ),
               child: const Text('Print receipt'),
             ),
@@ -198,6 +224,35 @@ class _PosScreenState extends State<PosScreen> {
     } finally {
       if (mounted) setState(() => _paying = false);
     }
+  }
+
+  Widget _customerBar() {
+    final c = _customer;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: c == null
+            ? ActionChip(
+                avatar: const Icon(Icons.person_add_alt, size: 18),
+                label: const Text('Add customer'),
+                onPressed: () async {
+                  final picked = await ContactPicker.show(context);
+                  if (picked != null) setState(() => _customer = picked);
+                },
+              )
+            : InputChip(
+                avatar: const Icon(Icons.person, size: 18),
+                label: Text('${c['name']}'
+                    '${Crm.instance.loyalty.enabled ? ' · ${((c['loyalty_points'] ?? 0) as num).toInt()} pts' : ''}'),
+                onDeleted: () => setState(() => _customer = null),
+                onPressed: () async {
+                  final picked = await ContactPicker.show(context);
+                  if (picked != null) setState(() => _customer = picked);
+                },
+              ),
+      ),
+    );
   }
 
   @override
@@ -230,6 +285,7 @@ class _PosScreenState extends State<PosScreen> {
           IconButton.filled(onPressed: _scan, icon: const Icon(Icons.qr_code_scanner), tooltip: 'Scan'),
         ]),
       ),
+      _customerBar(),
       if (results.isNotEmpty)
         Expanded(
           child: ListView(children: [
@@ -323,16 +379,27 @@ class _PosScreenState extends State<PosScreen> {
       );
 }
 
-class _PaySheet extends StatefulWidget {
-  final double total;
-  final NumberFormat money;
-  const _PaySheet({required this.total, required this.money});
-  @override
-  State<_PaySheet> createState() => _PaySheetState();
+class PayResult {
+  final String method; // payment for the part not covered by points
+  final double amount; // what was handed over for that part (cash may be more than due)
+  final double pointsAmount; // value paid with loyalty points
+  final double change;
+  PayResult(this.method, this.amount, this.pointsAmount, this.change);
 }
 
-class _PaySheetState extends State<_PaySheet> {
+class PaySheet extends StatefulWidget {
+  final double total;
+  final NumberFormat money;
+  final double maxPoints; // money value of points that can be used (0 = none)
+  final double pointsBalance;
+  const PaySheet({super.key, required this.total, required this.money, this.maxPoints = 0, this.pointsBalance = 0});
+  @override
+  State<PaySheet> createState() => _PaySheetState();
+}
+
+class _PaySheetState extends State<PaySheet> {
   String _method = 'cash';
+  bool _usePoints = false;
   late final TextEditingController _amount = TextEditingController(text: widget.total.toStringAsFixed(2));
 
   static const _methods = {
@@ -343,12 +410,16 @@ class _PaySheetState extends State<_PaySheet> {
     'bank_transfer': ('Bank transfer', Icons.account_balance_outlined),
   };
 
+  double get _points => _usePoints ? widget.maxPoints : 0;
+  double get _due => ((widget.total - _points) * 100).roundToDouble() / 100;
+
+  void _resetAmount() => _amount.text = _due.toStringAsFixed(2);
+
   @override
   Widget build(BuildContext context) {
     final amount = double.tryParse(_amount.text) ?? 0;
-    final quick = <double>{widget.total, ...[5, 10, 20, 50, 100].map((e) => e.toDouble()).where((e) => e > widget.total)}
-        .take(4)
-        .toList();
+    final quick = <double>{_due, ...[5, 10, 20, 50, 100].map((e) => e.toDouble()).where((e) => e > _due)}.take(4).toList();
+    final ok = _due <= 0 || amount + 0.001 >= _due;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SafeArea(
@@ -357,41 +428,65 @@ class _PaySheetState extends State<_PaySheet> {
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Text('Total ${widget.money.format(widget.total)}',
                 style: Theme.of(context).textTheme.headlineSmall, textAlign: TextAlign.center),
+            if (widget.maxPoints > 0)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _usePoints,
+                onChanged: (v) => setState(() {
+                  _usePoints = v;
+                  _resetAmount();
+                }),
+                title: Text('Use points (${widget.money.format(widget.maxPoints)})'),
+                subtitle: Text('Balance ${widget.pointsBalance.toInt()} points'),
+              ),
+            if (_usePoints) Text('Still to pay ${widget.money.format(_due)}', textAlign: TextAlign.center),
             const SizedBox(height: 12),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final m in _methods.entries)
-                ChoiceChip(
-                  avatar: Icon(m.value.$2, size: 18),
-                  label: Text(m.value.$1),
-                  selected: _method == m.key,
-                  onSelected: (_) => setState(() {
-                    _method = m.key;
-                    if (m.key != 'cash') _amount.text = widget.total.toStringAsFixed(2);
-                  }),
-                ),
-            ]),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _amount,
-              enabled: _method == 'cash',
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Amount received', border: OutlineInputBorder()),
-              onChanged: (_) => setState(() {}),
-            ),
-            if (_method == 'cash') ...[
-              const SizedBox(height: 8),
-              Wrap(spacing: 8, children: [
-                for (final q in quick)
-                  ActionChip(
-                    label: Text(widget.money.format(q)),
-                    onPressed: () => setState(() => _amount.text = q.toStringAsFixed(2)),
+            if (_due > 0) ...[
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final m in _methods.entries)
+                  ChoiceChip(
+                    avatar: Icon(m.value.$2, size: 18),
+                    label: Text(m.value.$1),
+                    selected: _method == m.key,
+                    onSelected: (_) => setState(() {
+                      _method = m.key;
+                      if (m.key != 'cash') _resetAmount();
+                    }),
                   ),
               ]),
-              if (amount > widget.total) Text('Change: ${widget.money.format(amount - widget.total)}'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _amount,
+                enabled: _method == 'cash',
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'Amount received', border: OutlineInputBorder()),
+                onChanged: (_) => setState(() {}),
+              ),
+              if (_method == 'cash') ...[
+                const SizedBox(height: 8),
+                Wrap(spacing: 8, children: [
+                  for (final q in quick)
+                    ActionChip(
+                      label: Text(widget.money.format(q)),
+                      onPressed: () => setState(() => _amount.text = q.toStringAsFixed(2)),
+                    ),
+                ]),
+                if (amount > _due) Text('Change: ${widget.money.format(amount - _due)}'),
+              ],
             ],
             const SizedBox(height: 16),
             FilledButton(
-              onPressed: amount + 0.001 < widget.total ? null : () => Navigator.pop(context, (_method, amount)),
+              onPressed: !ok
+                  ? null
+                  : () => Navigator.pop(
+                        context,
+                        PayResult(
+                          _method,
+                          _due <= 0 ? 0 : (_method == 'cash' ? amount : _due),
+                          _points,
+                          _due > 0 && _method == 'cash' && amount > _due ? amount - _due : 0,
+                        ),
+                      ),
               child: const Padding(padding: EdgeInsets.symmetric(vertical: 14), child: Text('Complete sale')),
             ),
           ]),
