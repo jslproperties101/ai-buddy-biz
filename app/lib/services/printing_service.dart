@@ -408,6 +408,115 @@ class PrintingService {
     await Printing.layoutPdf(name: 'Commercial invoice ${shipment['ref']}', onLayout: (_) async => d.save());
   }
 
+  /// One A5 payslip per employee (Employment Act s.25A details: period, earnings, deductions, employer contributions).
+  static Future<void> printPayslip({
+    required Map<String, dynamic> payslip,
+    required List<Map<String, dynamic>> items,
+    required Map<String, dynamic> employee,
+    required int year,
+    required int month,
+  }) async {
+    final s = Session.instance;
+    final nf = NumberFormat('#,##0.00');
+    final small = const pw.TextStyle(fontSize: 8);
+    final bold = pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold);
+    final period = DateFormat('MMMM yyyy').format(DateTime(year, month));
+    pw.Widget row(String a, dynamic v, {bool b = false, bool neg = false}) => pw.Row(children: [
+          pw.Expanded(child: pw.Text(a, style: b ? bold : small)),
+          pw.Text('${neg ? '-' : ''}${nf.format((v as num).toDouble())}', style: b ? bold : small),
+        ]);
+    final earnings = items.where((i) => i['kind'] == 'earning').toList();
+    final deductions = items.where((i) => i['kind'] == 'deduction').toList();
+    final claims = items.where((i) => i['kind'] == 'claim').toList();
+    final doc = pw.Document();
+    doc.addPage(pw.Page(
+      pageFormat: PdfPageFormat.a5,
+      margin: const pw.EdgeInsets.all(20),
+      build: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+          pw.Text(s.tenantName, style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+          pw.Text('PAYSLIP $period', style: bold),
+        ]),
+        pw.SizedBox(height: 6),
+        pw.Text('${employee['full_name']} · ${employee['employee_no'] ?? ''}', style: bold),
+        pw.Text([employee['job_title'], employee['department']].whereType<String>().join(' · '), style: small),
+        pw.Divider(thickness: 0.5),
+        pw.Text('EARNINGS', style: bold),
+        for (final i in earnings) row(i['name'] as String, i['amount']),
+        row('Gross pay', payslip['gross'], b: true),
+        pw.SizedBox(height: 6),
+        pw.Text('DEDUCTIONS', style: bold),
+        for (final i in deductions) row(i['name'] as String, i['amount'], neg: true),
+        row('EPF (employee)', payslip['epf_ee'], neg: true),
+        row('SOCSO (employee)', payslip['socso_ee'], neg: true),
+        row('EIS (employee)', payslip['eis_ee'], neg: true),
+        row('PCB / income tax', payslip['pcb'], neg: true),
+        if ((payslip['zakat'] as num) > 0) row('Zakat', payslip['zakat'], neg: true),
+        if (claims.isNotEmpty) ...[
+          pw.SizedBox(height: 6),
+          pw.Text('REIMBURSEMENTS', style: bold),
+          for (final i in claims) row(i['name'] as String, i['amount']),
+        ],
+        pw.Divider(thickness: 0.5),
+        row('NET PAY', payslip['net_pay'], b: true),
+        pw.SizedBox(height: 10),
+        pw.Text('EMPLOYER CONTRIBUTIONS', style: bold),
+        row('EPF (employer)', payslip['epf_er']),
+        row('SOCSO (employer)', payslip['socso_er']),
+        row('EIS (employer)', payslip['eis_er']),
+        pw.Spacer(),
+        pw.Text('This is a computer-generated payslip.', style: const pw.TextStyle(fontSize: 7)),
+      ]),
+    ));
+    await Printing.layoutPdf(name: 'Payslip ${employee['full_name']} $period', onLayout: (_) async => doc.save());
+  }
+
+  /// Payroll summary for paying EPF, SOCSO/EIS and PCB and for the books.
+  static Future<void> printPayrollSummary({required Map<String, dynamic> run, required List<Map<String, dynamic>> slips}) async {
+    final s = Session.instance;
+    final nf = NumberFormat('#,##0.00');
+    final small = const pw.TextStyle(fontSize: 7);
+    final bold = pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold);
+    final period = DateFormat('MMMM yyyy').format(DateTime(run['year'] as int, run['month'] as int));
+    num sum(String k) => slips.fold<num>(0, (a, p) => a + (p[k] as num));
+    final doc = pw.Document();
+    doc.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(24),
+      build: (_) => [
+        pw.Text('${s.tenantName} — payroll $period (${(run['status'] as String).toUpperCase()})', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 8),
+        pw.TableHelper.fromTextArray(
+          headerStyle: bold,
+          cellStyle: small,
+          headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+          headers: ['Employee', 'Gross', 'EPF wages', 'EPF ee', 'EPF er', 'SOCSO ee', 'SOCSO er', 'EIS ee', 'EIS er', 'PCB', 'Claims', 'Net pay'],
+          cellAlignment: pw.Alignment.centerRight,
+          cellAlignments: {0: pw.Alignment.centerLeft},
+          data: [
+            for (final p in slips)
+              [
+                '${p['employees']['full_name']} (${p['employees']['employee_no'] ?? ''})',
+                for (final k in const ['gross', 'epf_wages', 'epf_ee', 'epf_er', 'socso_ee', 'socso_er', 'eis_ee', 'eis_er', 'pcb', 'claims', 'net_pay'])
+                  nf.format((p[k] as num).toDouble()),
+              ],
+            [
+              'TOTAL',
+              for (final k in const ['gross', 'epf_wages', 'epf_ee', 'epf_er', 'socso_ee', 'socso_er', 'eis_ee', 'eis_er', 'pcb', 'claims', 'net_pay'])
+                nf.format(sum(k).toDouble()),
+            ],
+          ],
+        ),
+        pw.SizedBox(height: 12),
+        pw.Text('Pay to KWSP (EPF): ${nf.format((sum('epf_ee') + sum('epf_er')).toDouble())}', style: bold),
+        pw.Text('Pay to PERKESO (SOCSO + EIS): ${nf.format((sum('socso_ee') + sum('socso_er') + sum('eis_ee') + sum('eis_er')).toDouble())}', style: bold),
+        pw.Text('Pay to LHDN (PCB): ${nf.format(sum('pcb').toDouble())}', style: bold),
+        pw.Text('Due by the 15th of the following month. Upload the official files through i-Akaun, ASSIST and e-PCB Plus.', style: small),
+      ],
+    ));
+    await Printing.layoutPdf(name: 'Payroll $period', onLayout: (_) async => doc.save());
+  }
+
   static String _addr(dynamic a) {
     if (a is Map) return a.values.whereType<String>().where((x) => x.trim().isNotEmpty).join(', ');
     return a?.toString() ?? '';

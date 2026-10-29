@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/session.dart';
 import 'crm_settings_screen.dart';
 import 'modules_screen.dart';
+import 'my_work_screen.dart';
 import 'reports_screen.dart';
 import 'sales_history_screen.dart';
 import 'shift_screen.dart';
@@ -59,6 +60,13 @@ class _MoreScreenState extends State<MoreScreen> {
           onTap: () => _go(Scaffold(appBar: AppBar(title: Text(e.$1)), body: e.$3)),
         ),
       if (widget.extra.isNotEmpty) const Divider(),
+      if (s.has('HR') && s.can('hr.self'))
+        ListTile(
+          leading: const Icon(Icons.badge_outlined),
+          title: const Text('My work'),
+          subtitle: const Text('Clock in/out, leave, claims, payslips'),
+          onTap: () => _go(const MyWorkScreen()),
+        ),
       if (s.can('inv.supplier.manage'))
         ListTile(
           leading: const Icon(Icons.factory_outlined),
