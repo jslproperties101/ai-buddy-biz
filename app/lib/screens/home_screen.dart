@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/catalog.dart';
 import '../services/sales_queue.dart';
 import '../services/session.dart';
+import 'assistant_screen.dart';
 import 'catalog_screen.dart';
 import 'crm_screen.dart';
 import 'invoices_screen.dart';
@@ -88,6 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (s.has('CRM') && (s.can('crm.deal.view') || s.can('crm.contact.view'))) ('CRM', Icons.people_alt_outlined, const CrmScreen()),
       if (s.has('HR') && s.can('hr.employee.view')) ('Team', Icons.badge_outlined, const TeamScreen()),
       if (s.has('LAW') && s.can('law.view')) ('Legal', Icons.gavel_outlined, const LegalScreen()),
+      if (s.has('AI') && s.can('ai.use')) ('Assistant', Icons.auto_awesome, const AssistantScreen()),
     ];
     final primary = features.take(4).toList();
     final tabs = <(String, IconData, Widget)>[

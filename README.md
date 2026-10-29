@@ -19,14 +19,14 @@ All-in-one business super app: POS, inventory, invoicing, accounting, tax, CRM, 
 | G | Legal & compliance: contracts, templates, e-signing, compliance calendar, AI legal assistant | Built |
 | H | Kids care: rooms & ratios, safe check-in/out, daily logs & photos, medicine, incidents, parent app, fees; team invitations | Built |
 | I | Restaurant & orders (tables, kitchen display, QR/online ordering), delivery, bookings, Shopify/WooCommerce sync, customer web app | Built |
-| J | AI agents across modules | |
+| J | AI assistant & agents: ask about your business, daily briefing, approved actions (reorders, reminders, follow-ups, prices) | Built |
 | K | Business plan and valuation roadmap | |
 
 ## Android app (`app/`)
 
 Flutter app. The APK is built by GitHub Actions (`.github/workflows/android.yml`) on every push to `main` and published to a release per batch:
 
-`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-i/ai-buddy-biz-batch-i.apk`
+`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-j/ai-buddy-biz-batch-j.apk`
 
 Set repo secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` first, and apply `supabase/migrations/*.sql` in order.
 
@@ -142,3 +142,21 @@ Campaigns and "send from business" messages are queued in `outbound_messages` an
   ```
   Products match by SKU. Shopify uses the GraphQL Admin API (default version 2026-07; set `api_version` in the keys to change).
 - Online payments (card/FPX/e-wallet) for web orders are not built in yet: customers pay on pickup/delivery or in the shop.
+
+## AI assistant & agents (Batch J)
+
+- Turn on **AI assistant & agents** in More → Modules. New tab **Assistant** (Ask · To approve · Briefing) for roles with `ai.use`.
+- The assistant (`supabase/functions/ai-agent`) uses Claude with read-only tools (sales, stock, money owed, pipeline, customers, staff,
+  operations, deadlines). Each tool is a database function that checks the user's permissions, so a manager and an accountant see
+  different things. Anonymous visitors cannot call them.
+- It can only **propose** actions: draft purchase order, message to a customer, follow-up task, price change, note. A person with the
+  matching permission approves (and can edit) each one. Messages go to the address on the customer's record; marketing only with consent;
+  price changes are capped (default 20%).
+- Daily briefing: turn it on in Assistant → ⚙. Deploy and schedule (it only runs for businesses whose briefing hour has passed):
+  ```
+  supabase functions deploy ai-agent
+  select cron.schedule('ai-briefing', '*/30 * * * *', $$ select net.http_post(
+    url := 'https://<project-ref>.supabase.co/functions/v1/ai-agent',
+    headers := jsonb_build_object('Authorization', 'Bearer <SERVICE_ROLE_KEY>')) $$);
+  ```
+  Uses the same `ANTHROPIC_API_KEY` secret as Batch G. Every question and briefing counts toward the monthly AI limit of the plan.
