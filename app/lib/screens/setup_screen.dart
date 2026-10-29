@@ -34,7 +34,7 @@ class _SetupScreenState extends State<SetupScreen> {
       _error = null;
     });
     try {
-      await Session.instance.db.rpc('create_tenant', params: {'p_name': _name.text.trim(), 'p_template': _template});
+      await AppSession.instance.db.rpc('create_tenant', params: {'p_name': _name.text.trim(), 'p_template': _template});
       widget.onDone();
     } on PostgrestException catch (e) {
       setState(() => _error = e.message);
@@ -50,14 +50,14 @@ class _SetupScreenState extends State<SetupScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Set up your business'),
-        actions: [IconButton(onPressed: Session.instance.signOut, icon: const Icon(Icons.logout))],
+        actions: [IconButton(onPressed: AppSession.instance.signOut, icon: const Icon(Icons.logout))],
       ),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         Card(
           child: ListTile(
             leading: const Icon(Icons.mail_outline),
             title: const Text('Invited by a business or your child\'s centre?'),
-            subtitle: Text('Ask them to invite ${Session.instance.db.auth.currentUser?.email ?? 'your email'}, '
+            subtitle: Text('Ask them to invite ${AppSession.instance.db.auth.currentUser?.email ?? 'your email'}, '
                 'confirm your email, then tap here.'),
             trailing: const Icon(Icons.refresh),
             onTap: widget.onDone,

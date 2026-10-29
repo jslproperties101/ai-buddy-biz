@@ -15,7 +15,7 @@ String _err(Object e) {
 }
 
 Future<Map<String, dynamic>> _agent(Map<String, dynamic> body) async {
-  final s = Session.instance;
+  final s = AppSession.instance;
   final r = await s.db.functions.invoke('ai-agent', body: {'tenant_id': s.tenantId, ...body});
   final d = r.data;
   if (d is Map && d['error'] == null) return Map<String, dynamic>.from(d);
@@ -28,7 +28,7 @@ class AssistantScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = Session.instance;
+    final s = AppSession.instance;
     return DefaultTabController(
       length: 3,
       child: Column(children: [
@@ -61,7 +61,7 @@ class _AskTabState extends State<_AskTab> with AutomaticKeepAliveClientMixin {
   String? _conversation;
   final List<(String, String, List<String>)> _msgs = []; // role, text, suggestion ids
   bool _busy = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   static const _starters = [
     'How were sales this week compared with last week?',
@@ -217,7 +217,7 @@ class _SuggestionsTabState extends State<SuggestionsTab> with AutomaticKeepAlive
   List<String> _ids = [];
   String _filter = 'pending';
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -292,7 +292,7 @@ class _SuggestionCardState extends State<SuggestionCard> {
   Map<String, String> _names = {}; // id → readable name
   final Map<String, TextEditingController> _edit = {};
   bool _busy = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   static const _icons = {
     'purchase_order': Icons.local_shipping_outlined,
@@ -495,7 +495,7 @@ class _BriefingTabState extends State<_BriefingTab> with AutomaticKeepAliveClien
   Map<String, dynamic>? _b;
   bool _loading = true;
   bool _making = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -587,7 +587,7 @@ class _AiSettingsScreenState extends State<AiSettingsScreen> {
   Map<String, dynamic>? _st;
   Map<String, dynamic>? _quota;
   final _maxPct = TextEditingController();
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   static const _agentInfo = [
     ('reorder', 'Stock', 'Draft purchase orders for items running low'),

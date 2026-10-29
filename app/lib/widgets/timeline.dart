@@ -32,7 +32,7 @@ class Timeline extends StatefulWidget {
 class TimelineState extends State<Timeline> {
   List<Map<String, dynamic>> _rows = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   bool get _canWrite => widget.shipmentId != null
       ? _s.can('log.shipment.manage')
       : widget.supplierId != null

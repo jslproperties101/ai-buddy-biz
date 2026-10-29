@@ -25,7 +25,7 @@ class _ModulesScreenState extends State<ModulesScreen> {
   ];
   bool _changed = false;
   bool _busy = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   Future<void> _toggle(String code, bool on) async {
     if (!on && _s.modules.length <= 1) {

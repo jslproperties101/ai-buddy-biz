@@ -21,7 +21,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   bool _loading = true;
   String? _error;
 
-  NumberFormat get _money => NumberFormat.currency(symbol: '${Session.instance.currency} ');
+  NumberFormat get _money => NumberFormat.currency(symbol: '${AppSession.instance.currency} ');
 
   @override
   void initState() {
@@ -30,7 +30,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Future<void> _load() async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     setState(() {
       _loading = true;
       _error = null;
@@ -141,7 +141,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final q = _search.text.trim().toLowerCase();
     final list = q.isEmpty
         ? _products

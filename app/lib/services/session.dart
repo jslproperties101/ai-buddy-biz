@@ -24,9 +24,9 @@ class TaxRate {
 }
 
 /// Who is signed in, which business and outlet they're working in, and what they may do.
-class Session {
-  Session._();
-  static final Session instance = Session._();
+class AppSession {
+  AppSession._();
+  static final AppSession instance = AppSession._();
 
   SupabaseClient get db => Supabase.instance.client;
 

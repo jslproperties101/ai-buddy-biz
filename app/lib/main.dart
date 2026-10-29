@@ -64,7 +64,7 @@ class _AuthGateState extends State<AuthGate> {
   Future<bool> _sessionFor(String uid) {
     if (_loadedFor != uid || _loading == null) {
       _loadedFor = uid;
-      _loading = Session.instance.load().then((has) async {
+      _loading = AppSession.instance.load().then((has) async {
         if (has) await Crm.instance.load();
         return has;
       });

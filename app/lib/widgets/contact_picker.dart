@@ -23,7 +23,7 @@ class _ContactPickerState extends State<ContactPicker> {
   List<Map<String, dynamic>> _rows = [];
   String _q = '';
   bool _offline = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   bool get _canAdd => _s.can('crm.contact.create') || _s.can('crm.contact.manage');
 
   @override

@@ -78,7 +78,7 @@ class _ShipmentScreenState extends State<ShipmentScreen> {
       k: TextEditingController()
   };
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   bool get _canEdit => _s.can('log.shipment.manage');
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
 

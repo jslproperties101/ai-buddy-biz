@@ -17,7 +17,7 @@ class _InvoicesScreenState extends State<InvoicesScreen> {
   String? _error;
   String _filter = 'open';
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
 
   @override

@@ -35,7 +35,7 @@ class ExtSettingsScreen extends StatelessWidget {
   }
 }
 
-Session get _s => Session.instance;
+AppSession get _s => AppSession.instance;
 
 void _snack(BuildContext c, String t) => ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(t)));
 

@@ -20,7 +20,7 @@ class SalesQueue {
   SalesQueue._();
   static final SalesQueue instance = SalesQueue._();
 
-  String get _key => 'pending_sales_${Session.instance.tenantId}';
+  String get _key => 'pending_sales_${AppSession.instance.tenantId}';
 
   Future<List<Map<String, dynamic>>> pending() async {
     final prefs = await SharedPreferences.getInstance();
@@ -37,7 +37,7 @@ class SalesQueue {
   /// Network errors put the sale in the offline queue.
   Future<SaleResult> submit(Map<String, dynamic> payload) async {
     try {
-      final res = await Session.instance.db.rpc('complete_sale', params: {'p': payload});
+      final res = await AppSession.instance.db.rpc('complete_sale', params: {'p': payload});
       final m = res as Map<String, dynamic>;
       return SaleResult(SaleOutcome.synced, receiptNo: m['receipt_no'] as String?, total: (m['total'] as num?)?.toDouble());
     } on PostgrestException {
@@ -61,7 +61,7 @@ class SalesQueue {
     final remaining = <Map<String, dynamic>>[];
     for (var i = 0; i < items.length; i++) {
       try {
-        await Session.instance.db.rpc('complete_sale', params: {'p': items[i]});
+        await AppSession.instance.db.rpc('complete_sale', params: {'p': items[i]});
         sent++;
       } on PostgrestException catch (e) {
         await _addFailed(items[i], e.message);

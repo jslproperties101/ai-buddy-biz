@@ -27,7 +27,7 @@ class ModGroup {
 class Orders {
   Orders._();
 
-  static NumberFormat get money => NumberFormat.currency(symbol: '${Session.instance.currency} ');
+  static NumberFormat get money => NumberFormat.currency(symbol: '${AppSession.instance.currency} ');
   static final hm = DateFormat('HH:mm');
 
   static const statusLabels = {
@@ -82,7 +82,7 @@ class Orders {
   static Map<String, dynamic>? _settings;
   static Future<Map<String, dynamic>?> settings({bool refresh = false}) async {
     if (_settings != null && !refresh) return _settings;
-    final s = Session.instance;
+    final s = AppSession.instance;
     try {
       _settings = await s.db.from('ext_settings').select().eq('tenant_id', s.tenantId!).maybeSingle();
     } catch (_) {}
@@ -100,9 +100,9 @@ class Orders {
   static List<Map<String, dynamic>> categories = [];
   static Future<List<MenuItem>> menu({bool refresh = false}) async {
     if (_menu != null && !refresh) return _menu!;
-    final s = Session.instance;
+    final s = AppSession.instance;
     final st = await settings();
-    final r = await Future.wait([
+    final r = await Future.wait<dynamic>([
       s.db
           .from('products')
           .select('id, name, category_id, sold_out, menu_sort, kind, product_variants(id, name, price, active), '

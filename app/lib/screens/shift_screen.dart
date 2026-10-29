@@ -17,7 +17,7 @@ class _ShiftScreenState extends State<ShiftScreen> {
   double? _expected;
   Map<String, dynamic>? _closed;
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
 
   @override

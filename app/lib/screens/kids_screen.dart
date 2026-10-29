@@ -12,7 +12,7 @@ class KidsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final tabs = <(String, Widget)>[
       ('Today', const _TodayTab()),
       ('Children', const _ChildrenTab()),
@@ -45,7 +45,7 @@ class _TodayTabState extends State<_TodayTab> with AutomaticKeepAliveClientMixin
   Map<String, dynamic>? _myDuty;
   String? _room; // filter
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -60,7 +60,7 @@ class _TodayTabState extends State<_TodayTab> with AutomaticKeepAliveClientMixin
 
   Future<void> _load() async {
     try {
-      final r = await Future.wait([
+      final r = await Future.wait<dynamic>([
         _s.db
             .from('children')
             .select('id, full_name, preferred_name, dob, room_id, photo_path, allergies, medical_conditions, days')
@@ -304,7 +304,7 @@ class _TodayTabState extends State<_TodayTab> with AutomaticKeepAliveClientMixin
 
 /// Check-in: who dropped off, optional temperature and note.
 Future<bool?> checkInDialog(BuildContext context, Map<String, dynamic> child) async {
-  final s = Session.instance;
+  final s = AppSession.instance;
   final guardians = await s.db
       .from('child_guardians')
       .select('relation, guardians(full_name)')
@@ -369,9 +369,9 @@ Future<bool?> checkInDialog(BuildContext context, Map<String, dynamic> child) as
 
 /// Check-out: only to a guardian allowed to collect, a person authorised for today (ID check), a PIN, or a manager override.
 Future<bool?> checkOutDialog(BuildContext context, Map<String, dynamic> child) async {
-  final s = Session.instance;
+  final s = AppSession.instance;
   final today = Kids.isoDate(DateTime.now());
-  final r = await Future.wait([
+  final r = await Future.wait<dynamic>([
     s.db.from('child_guardians').select('relation, can_pickup, guardians(id, full_name, phone, id_last4)').eq('child_id', child['id']),
     s.db.from('pickup_persons').select().eq('child_id', child['id']).lte('valid_from', today).gte('valid_to', today),
   ]);
@@ -505,7 +505,7 @@ class _ChildrenTabState extends State<_ChildrenTab> with AutomaticKeepAliveClien
   String _status = 'enrolled';
   String _q = '';
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -623,7 +623,7 @@ class _RecordsTabState extends State<_RecordsTab> with AutomaticKeepAliveClientM
   List<Map<String, dynamic>> _given = [];
   List<Map<String, dynamic>> _incidents = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -637,7 +637,7 @@ class _RecordsTabState extends State<_RecordsTab> with AutomaticKeepAliveClientM
   Future<void> _load() async {
     final today = Kids.isoDate(DateTime.now());
     try {
-      final r = await Future.wait([
+      final r = await Future.wait<dynamic>([
         _s.db
             .from('kids_med_authorisations')
             .select('*, children(full_name, preferred_name)')
@@ -721,7 +721,7 @@ class _RecordsTabState extends State<_RecordsTab> with AutomaticKeepAliveClientM
 }
 
 Future<bool?> giveMedicineDialog(BuildContext context, Map<String, dynamic> m) async {
-  final s = Session.instance;
+  final s = AppSession.instance;
   final dose = TextEditingController(text: m['dose'] as String);
   final witness = TextEditingController();
   final ok = await showDialog<bool>(
@@ -758,7 +758,7 @@ Future<bool?> giveMedicineDialog(BuildContext context, Map<String, dynamic> m) a
 
 /// Incident detail for staff (with PDF and close) — parents use their own view.
 Future<void> showIncident(BuildContext context, Map<String, dynamic> i, {VoidCallback? onChanged}) async {
-  final s = Session.instance;
+  final s = AppSession.instance;
   final childName = (i['children'] as Map?)?['full_name'] ?? '';
   await Navigator.of(context).push(MaterialPageRoute(
     builder: (ctx) => Scaffold(

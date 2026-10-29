@@ -104,7 +104,7 @@ class Kids {
     final hit = _urls[path];
     if (hit != null && hit.$2.isAfter(DateTime.now())) return hit.$1;
     try {
-      final u = await Session.instance.db.storage.from('kids').createSignedUrl(path, 3600);
+      final u = await AppSession.instance.db.storage.from('kids').createSignedUrl(path, 3600);
       _urls[path] = (u, DateTime.now().add(const Duration(minutes: 50)));
       return u;
     } catch (_) {
@@ -128,7 +128,7 @@ class Kids {
     if (x == null) return null;
     final Uint8List bytes = await x.readAsBytes();
     final path = '$tenantId/$childId/${const Uuid().v4()}.jpg';
-    await Session.instance.db.storage.from('kids').uploadBinary(path, bytes, fileOptions: const FileOptions(contentType: 'image/jpeg'));
+    await AppSession.instance.db.storage.from('kids').uploadBinary(path, bytes, fileOptions: const FileOptions(contentType: 'image/jpeg'));
     return path;
   }
 }
@@ -238,7 +238,7 @@ class _KidsChatState extends State<KidsChat> {
   final _t = TextEditingController();
   List<Map<String, dynamic>> _rows = [];
   bool _sending = false;
-  SupabaseClient get _db => Session.instance.db;
+  SupabaseClient get _db => AppSession.instance.db;
 
   @override
   void initState() {

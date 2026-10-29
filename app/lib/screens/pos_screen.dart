@@ -20,7 +20,7 @@ class CartLine {
   double get net => gross - discount;
 
   // Mirrors the server's complete_sale maths so the screen total matches the receipt.
-  TaxRate get tax => Session.instance.taxFor(variant.taxCode);
+  TaxRate get tax => AppSession.instance.taxFor(variant.taxCode);
   double get netRounded => (net * 100).roundToDouble() / 100;
   double get taxAmount {
     final t = tax;
@@ -44,7 +44,7 @@ class _PosScreenState extends State<PosScreen> {
   bool _paying = false;
   Map<String, dynamic>? _customer;
 
-  NumberFormat get _money => NumberFormat.currency(symbol: '${Session.instance.currency} ');
+  NumberFormat get _money => NumberFormat.currency(symbol: '${AppSession.instance.currency} ');
   double get _subtotal => _cart.fold<double>(0.0, (a, l) => a + l.gross);
   double get _discount => _cart.fold<double>(0.0, (a, l) => a + l.discount);
   double _round(double v) => (v * 100).roundToDouble() / 100;
@@ -97,7 +97,7 @@ class _PosScreenState extends State<PosScreen> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: InputDecoration(
               labelText: 'Discount (amount)',
-              helperText: Session.instance.can('pos.sale.discount') ? null : 'Up to 10% without a manager',
+              helperText: AppSession.instance.can('pos.sale.discount') ? null : 'Up to 10% without a manager',
             ),
           ),
         ]),
@@ -125,7 +125,7 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _pay() async {
     if (_cart.isEmpty) return;
-    final s = Session.instance;
+    final s = AppSession.instance;
     if (s.outlet == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No outlet selected')));
       return;

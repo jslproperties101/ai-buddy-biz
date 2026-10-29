@@ -14,7 +14,7 @@ class ParentScreen extends StatefulWidget {
 class _ParentScreenState extends State<ParentScreen> {
   List<Map<String, dynamic>> _kids = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   void initState() {
@@ -105,7 +105,7 @@ class _ParentChildScreenState extends State<ParentChildScreen> {
   Map<String, dynamic>? _att;
   bool _consent = false;
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   String get _id => widget.child['child_id'] as String;
   String get _name => (widget.child['preferred_name'] ?? widget.child['full_name']) as String;
 

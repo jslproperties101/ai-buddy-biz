@@ -35,7 +35,7 @@ class _PoScreenState extends State<PoScreen> {
   final List<_PoLine> _lines = [];
   bool _loading = true;
   bool _busy = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   String get _status => (_po?['status'] ?? 'draft') as String;
   bool get _draft => _status == 'draft';
   NumberFormat get _money => NumberFormat.currency(symbol: '${_po?['currency'] ?? _s.currency} ');

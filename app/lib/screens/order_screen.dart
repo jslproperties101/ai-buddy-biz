@@ -20,7 +20,7 @@ class _OrderScreenState extends State<OrderScreen> {
   List<Map<String, dynamic>> _items = [];
   bool _loading = true;
   bool _busy = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   String get _status => (_o?['status'] ?? '') as String;
   bool get _active => const ['pending', 'open', 'ready', 'out_for_delivery', 'delivered'].contains(_status);

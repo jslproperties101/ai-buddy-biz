@@ -45,8 +45,8 @@ class _HomeScreenState extends State<HomeScreen> {
     var online = true;
     try {
       await Catalog.instance.refresh();
-      await Session.instance.refreshTaxTable();
-      await Session.instance.refreshShift();
+      await AppSession.instance.refreshTaxTable();
+      await AppSession.instance.refreshShift();
     } catch (_) {
       online = false;
     }
@@ -72,7 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final s = Session.instance;
+    final s = AppSession.instance;
     // Each business sees only the modules it switched on and its role allows.
     // Four fit in the bottom bar; any extra appear at the top of More.
     final features = <(String, IconData, Widget)>[
@@ -147,7 +147,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onDestinationSelected: (i) async {
           setState(() => _tab = i);
           if (tabs[i].$1 == 'Sell') {
-            await Session.instance.refreshShift();
+            await AppSession.instance.refreshShift();
             if (mounted) setState(() {});
           }
         },

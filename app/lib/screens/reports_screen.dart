@@ -22,11 +22,11 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   List<Map<String, dynamic>> _tax = [];
   List<Map<String, dynamic>> _tb = [];
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
   final _d = DateFormat('yyyy-MM-dd');
 
-  late final List<(String, bool)> _tabs = [
+  late final List<(String, bool)> _tabs = <(String, bool)>[
     ('Sales', _s.can('pos.report.view') || _s.can('fin.report.view')),
     ('Profit & loss', _s.can('fin.report.view')),
     ('Tax', _s.can('fin.report.view')),

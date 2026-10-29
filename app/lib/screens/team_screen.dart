@@ -13,7 +13,7 @@ class TeamScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final tabs = <(String, Widget)>[
       ('People', const _PeopleTab()),
       ('Today', const _TodayTab()),
@@ -41,7 +41,7 @@ class _PeopleTabState extends State<_PeopleTab> with AutomaticKeepAliveClientMix
   bool _showLeft = false;
   String _q = '';
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -142,7 +142,7 @@ class _TodayTabState extends State<_TodayTab> with AutomaticKeepAliveClientMixin
   List<Map<String, dynamic>> _att = [];
   List<Map<String, dynamic>> _onLeave = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -251,7 +251,7 @@ class _ApprovalsTabState extends State<_ApprovalsTab> with AutomaticKeepAliveCli
   List<Map<String, dynamic>> _leave = [];
   List<Map<String, dynamic>> _claims = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
 
   @override
@@ -355,7 +355,7 @@ class HolidaysScreen extends StatefulWidget {
 class _HolidaysScreenState extends State<HolidaysScreen> {
   List<Map<String, dynamic>> _rows = [];
   int _year = DateTime.now().year;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   void initState() {

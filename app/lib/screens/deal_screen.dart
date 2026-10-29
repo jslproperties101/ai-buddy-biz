@@ -45,7 +45,7 @@ class _DealScreenState extends State<DealScreen> {
   bool _loading = true;
   bool _busy = false;
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   bool get _canEdit => _s.can('crm.deal.manage');
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
 

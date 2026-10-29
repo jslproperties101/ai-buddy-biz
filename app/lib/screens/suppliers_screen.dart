@@ -32,7 +32,7 @@ class _SuppliersScreenState extends State<SuppliersScreen> {
   String? _cat;
   String _q = '';
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.compactCurrency(symbol: '${_s.currency} ');
 
   @override
@@ -195,7 +195,7 @@ String statusText(String s) => '${s[0].toUpperCase()}${s.substring(1)}';
 
 /// Add or edit a supplier. Returns the saved row.
 Future<Map<String, dynamic>?> editSupplier(BuildContext context, Map<String, dynamic>? sup) async {
-  final s = Session.instance;
+  final s = AppSession.instance;
   TextEditingController t(String k) => TextEditingController(text: sup?[k]?.toString() ?? '');
   final f = {
     for (final k in const ['name', 'contact_name', 'phone', 'email', 'website', 'tin', 'currency', 'payment_terms_days', 'lead_time_days', 'iata_prefix', 'scac', 'notes'])
@@ -310,7 +310,7 @@ class _SupplierScreenState extends State<SupplierScreen> {
   List<Map<String, dynamic>> _docs = [];
   List<Map<String, dynamic>> _pos = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
 
   @override

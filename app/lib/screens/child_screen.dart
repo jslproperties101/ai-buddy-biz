@@ -22,7 +22,7 @@ class _ChildScreenState extends State<ChildScreen> {
   List<Map<String, dynamic>> _incidents = [];
   DateTime _day = DateTime.now();
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   void initState() {
@@ -692,7 +692,7 @@ class _ChildScreenState extends State<ChildScreen> {
 
 /// Quick log sheet: one entry for this child (and optionally other children checked in now).
 Future<bool?> addLogSheet(BuildContext context, Map<String, dynamic> child) async {
-  final s = Session.instance;
+  final s = AppSession.instance;
   String kind = 'meal';
   final note = TextEditingController();
   final item = TextEditingController();
@@ -904,7 +904,7 @@ class _ChildEditScreenState extends State<ChildEditScreen> {
   String? _photo;
   List<Map<String, dynamic>> _rooms = [], _plans = [];
   bool _saving = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   void initState() {

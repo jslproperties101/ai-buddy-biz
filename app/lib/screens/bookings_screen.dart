@@ -18,7 +18,7 @@ class _BookingsTabState extends State<BookingsTab> with AutomaticKeepAliveClient
   DateTime _day = DateTime.now();
   List<Map<String, dynamic>> _rows = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   static final _dayFmt = DateFormat('EEE d MMM');
 
   @override

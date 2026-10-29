@@ -14,7 +14,7 @@ class OrdersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final tabs = <(String, Widget)>[
       if (s.can('ord.view')) ('Floor', const _FloorTab()),
       if (s.can('ord.view')) ('Orders', const _QueueTab()),
@@ -75,7 +75,7 @@ class _FloorTabState extends State<_FloorTab> with AutomaticKeepAliveClientMixin
   Map<String, int> _readyCount = {};
   Map<String, int> _newCount = {};
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -232,7 +232,7 @@ class _QueueTabState extends State<_QueueTab> with AutomaticKeepAliveClientMixin
   List<Map<String, dynamic>> _rows = [];
   String _filter = 'active';
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -422,7 +422,7 @@ class _KitchenTabState extends State<KitchenTab> with AutomaticKeepAliveClientMi
   String? _station;
   bool _showReady = false;
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -584,7 +584,7 @@ class DeliveriesScreen extends StatefulWidget {
 class _DeliveriesScreenState extends State<DeliveriesScreen> with _Polling {
   List<Map<String, dynamic>> _rows = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   void initState() {

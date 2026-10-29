@@ -18,7 +18,7 @@ class _KidsSetupTabState extends State<KidsSetupTab> with AutomaticKeepAliveClie
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   bool _loading = true;
   bool _billing = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   bool get _manage => _s.can('kids.manage');
 
   @override

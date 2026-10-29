@@ -83,7 +83,7 @@ class Catalog {
   List<Variant> variants = [];
   DateTime? lastSync;
 
-  String get _key => 'catalog_${Session.instance.tenantId}';
+  String get _key => 'catalog_${AppSession.instance.tenantId}';
 
   Future<void> loadCache() async {
     final prefs = await SharedPreferences.getInstance();
@@ -96,7 +96,7 @@ class Catalog {
 
   /// Pulls the latest catalogue. Throws when offline; the cached copy stays in place.
   Future<void> refresh() async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final rows = await s.db
         .from('product_variants')
         .select('id, product_id, name, sku, price, cost, track_stock, active, products!inner(name, active, tax_code), barcodes(code, symbology, pack_qty)')

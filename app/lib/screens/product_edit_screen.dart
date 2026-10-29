@@ -41,7 +41,7 @@ class _ProductEditScreenState extends State<ProductEditScreen> {
   bool _active = true;
 
   bool get _isNew => widget.productId == null;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   void initState() {

@@ -15,7 +15,7 @@ class _TeamAccessScreenState extends State<TeamAccessScreen> {
   List<Map<String, dynamic>> _invites = [];
   List<Map<String, dynamic>> _roles = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   void initState() {
@@ -25,7 +25,7 @@ class _TeamAccessScreenState extends State<TeamAccessScreen> {
 
   Future<void> _load() async {
     try {
-      final r = await Future.wait([
+      final r = await Future.wait<dynamic>([
         _s.db.rpc('team_members', params: {'p_tenant': _s.tenantId}),
         _s.db.from('invites').select('id, email, created_at, roles(name)').eq('tenant_id', _s.tenantId!).isFilter('accepted_at', null).order('created_at'),
         _s.db.from('roles').select('id, name, tenant_id').or('tenant_id.is.null,tenant_id.eq.${_s.tenantId}').order('name'),

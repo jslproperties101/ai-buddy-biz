@@ -12,7 +12,7 @@ class LegalScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final tabs = <(String, Widget)>[
       ('Contracts', const _ContractsTab()),
       ('Calendar', const LegalCalendarTab()),
@@ -44,7 +44,7 @@ class LegalScreen extends StatelessWidget {
 
 /// Creates a contract from a template (or blank) and opens it.
 Future<void> newContract(BuildContext context, {Map<String, dynamic>? template, String? title, String? body, String? category}) async {
-  final s = Session.instance;
+  final s = AppSession.instance;
   try {
     var text = body ?? '';
     Map<String, String> values = {};
@@ -108,7 +108,7 @@ class _ContractsTabState extends State<_ContractsTab> with AutomaticKeepAliveCli
   bool _loading = true;
   String _q = '';
   String _filter = 'active'; // active, signing, signed, all
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -281,7 +281,7 @@ class _LegalCalendarTabState extends State<LegalCalendarTab> with AutomaticKeepA
   List<Map<String, dynamic>> _rows = [];
   bool _loading = true;
   bool _showDone = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   bool get _canEdit => _s.can('law.compliance') || _s.can('law.manage');
 
   @override
@@ -564,7 +564,7 @@ class _TemplatesTab extends StatefulWidget {
 class _TemplatesTabState extends State<_TemplatesTab> with AutomaticKeepAliveClientMixin {
   List<Map<String, dynamic>> _rows = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;

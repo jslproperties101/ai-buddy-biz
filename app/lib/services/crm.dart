@@ -32,7 +32,7 @@ class Crm {
   String? leadFormKey;
 
   Future<void> load() async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     try {
       final r = await s.db.rpc('get_crm_settings', params: {'p_tenant': s.tenantId}) as Map<String, dynamic>;
       loyalty = LoyaltyRules.fromJson(r['loyalty'] as Map<String, dynamic>?);
@@ -57,7 +57,7 @@ String waNumber(String phone, String countryCode) {
 }
 
 Future<bool> openWhatsApp(String phone, {String text = ''}) => launchUrl(
-      Uri.parse('https://wa.me/${waNumber(phone, Session.instance.countryCode)}${text.isEmpty ? '' : '?text=${Uri.encodeComponent(text)}'}'),
+      Uri.parse('https://wa.me/${waNumber(phone, AppSession.instance.countryCode)}${text.isEmpty ? '' : '?text=${Uri.encodeComponent(text)}'}'),
       mode: LaunchMode.externalApplication,
     );
 

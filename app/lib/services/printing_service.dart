@@ -10,7 +10,7 @@ import 'session.dart';
 
 /// Receipts (58mm/80mm roll) and barcode labels, sent to any Android print service or shared as PDF.
 class PrintingService {
-  static NumberFormat get _money => NumberFormat.currency(symbol: '${Session.instance.currency} ');
+  static NumberFormat get _money => NumberFormat.currency(symbol: '${AppSession.instance.currency} ');
 
   static Future<void> printReceipt({
     required String receiptNo,
@@ -23,7 +23,7 @@ class PrintingService {
     required double paid,
     double widthMm = 80,
   }) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final doc = pw.Document();
     final style = pw.TextStyle(fontSize: 8);
     pw.Widget row(String a, String b, {bool bold = false}) => pw.Row(
@@ -96,7 +96,7 @@ class PrintingService {
     required Map<String, dynamic>? contact,
     required List<Map<String, dynamic>> lines,
   }) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final seller = await s.db
         .from('tenants')
         .select('name, tin, tax_registration_no')
@@ -209,7 +209,7 @@ class PrintingService {
 
   /// 4×6 inch (102×152 mm) label per package: big route codes, ref barcode, "n of N", tracking QR.
   static Future<void> printShippingLabels({required Map<String, dynamic> shipment, required String trackingText}) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final total = ((shipment['packages'] ?? 0) as num).toInt().clamp(1, 999);
     final doc = pw.Document();
     final big = pw.TextStyle(fontSize: 34, fontWeight: pw.FontWeight.bold);
@@ -270,7 +270,7 @@ class PrintingService {
     required List<Map<String, dynamic>> items,
     required List<Map<String, dynamic>> containers,
   }) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final ids = [shipment['shipper_id'], shipment['consignee_id']].whereType<String>().toList();
     final parties = ids.isEmpty
         ? <dynamic>[]
@@ -418,7 +418,7 @@ class PrintingService {
     required int year,
     required int month,
   }) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final nf = NumberFormat('#,##0.00');
     final small = const pw.TextStyle(fontSize: 8);
     final bold = pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold);
@@ -475,7 +475,7 @@ class PrintingService {
 
   /// Payroll summary for paying EPF, SOCSO/EIS and PCB and for the books.
   static Future<void> printPayrollSummary({required Map<String, dynamic> run, required List<Map<String, dynamic>> slips}) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final nf = NumberFormat('#,##0.00');
     final small = const pw.TextStyle(fontSize: 7);
     final bold = pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold);
@@ -526,7 +526,7 @@ class PrintingService {
     required List<Map<String, dynamic>> events,
     String? verifyUrl,
   }) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final dt = DateFormat('d MMM yyyy, HH:mm');
     String when(dynamic v) {
       final d = DateTime.tryParse('${v ?? ''}');
@@ -648,7 +648,7 @@ class PrintingService {
     required Map<String, Map<String, dynamic>> attendance,
     required String Function(dynamic roomId) roomName,
   }) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     String t(dynamic v) {
       final d = DateTime.tryParse('${v ?? ''}');
       return d == null ? '' : DateFormat('HH:mm').format(d.toLocal());
@@ -695,7 +695,7 @@ class PrintingService {
 
   /// Incident / accident report with parent signature lines.
   static Future<void> printIncident({required Map<String, dynamic> incident, required String childName}) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final i = incident;
     final dt = DateFormat('d MMM yyyy, HH:mm');
     String w(dynamic v) {
@@ -748,7 +748,7 @@ class PrintingService {
 
   /// QR code cards for tables: customers scan to see the menu and order at their table.
   static Future<void> printTableQrs({required List<Map<String, dynamic>> tables, required String Function(Map<String, dynamic>) urlFor}) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final doc = pw.Document();
     doc.addPage(pw.MultiPage(
       pageFormat: PdfPageFormat.a4,
@@ -778,7 +778,7 @@ class PrintingService {
 
   /// Bill to show the table before paying (not a receipt).
   static Future<void> printOrderBill({required Map<String, dynamic> order, required Map<String, dynamic> quote, double widthMm = 80}) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final style = const pw.TextStyle(fontSize: 8);
     final bold = pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold);
     pw.Widget row(String a, String b, {bool b2 = false}) =>

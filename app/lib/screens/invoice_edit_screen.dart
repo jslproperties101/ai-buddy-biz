@@ -37,7 +37,7 @@ class _InvoiceEditScreenState extends State<InvoiceEditScreen> {
   bool _loading = true;
   bool _busy = false;
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
   bool get _draft => _inv == null || _inv!['status'] == 'draft';
   bool get _canManage => _s.can('fin.invoice.manage');

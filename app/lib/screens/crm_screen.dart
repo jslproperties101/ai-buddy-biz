@@ -12,7 +12,7 @@ class CrmScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final tabs = <(String, Widget)>[
       if (s.can('crm.deal.view')) ('Leads', const _LeadsTab()),
       if (s.can('crm.contact.view')) ('Customers', const _CustomersTab()),
@@ -46,7 +46,7 @@ class _LeadsTabState extends State<_LeadsTab> with AutomaticKeepAliveClientMixin
   bool _loading = true;
   String? _error;
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.compactCurrency(symbol: '${_s.currency} ');
 
   @override
@@ -224,7 +224,7 @@ class _CustomersTabState extends State<_CustomersTab> with AutomaticKeepAliveCli
   bool _loading = true;
   String? _error;
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.compactCurrency(symbol: '${_s.currency} ');
 
   @override
@@ -377,7 +377,7 @@ class _TasksTabState extends State<_TasksTab> with AutomaticKeepAliveClientMixin
   bool _everyone = false;
   bool _loading = true;
   String? _error;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -472,7 +472,7 @@ class _CampaignsTabState extends State<_CampaignsTab> with AutomaticKeepAliveCli
   List<Map<String, dynamic>> _rows = [];
   bool _loading = true;
   String? _error;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;

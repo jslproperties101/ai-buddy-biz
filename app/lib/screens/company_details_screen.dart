@@ -20,7 +20,7 @@ class _CompanyDetailsScreenState extends State<CompanyDetailsScreen> {
   };
   bool _loading = true;
   bool _saving = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   void initState() {

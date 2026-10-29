@@ -9,7 +9,7 @@ import 'deal_screen.dart';
 
 /// Add (contact == null) or edit a customer. Returns the saved row.
 Future<Map<String, dynamic>?> editContact(BuildContext context, Map<String, dynamic>? contact) async {
-  final s = Session.instance;
+  final s = AppSession.instance;
   final c = contact ?? {};
   TextEditingController t(String k) => TextEditingController(text: (c[k] ?? '').toString());
   final name = t('name'), phone = t('phone'), email = t('email'), company = t('company');
@@ -127,7 +127,7 @@ class _ContactScreenState extends State<ContactScreen> {
   bool _loading = true;
   final _timeline = GlobalKey<TimelineState>();
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
 
   @override

@@ -23,7 +23,7 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
   bool _busy = false;
   final Map<String, TextEditingController> _c = {};
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   bool get _canManage => _s.can('hr.employee.manage');
   bool get _canPay => _s.can('hr.payroll.run') || _s.can('hr.employee.manage');
 

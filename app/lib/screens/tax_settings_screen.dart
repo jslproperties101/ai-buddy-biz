@@ -14,7 +14,7 @@ class TaxSettingsScreen extends StatefulWidget {
 class _TaxSettingsScreenState extends State<TaxSettingsScreen> {
   List<Map<String, dynamic>> _zones = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   bool get _canEdit => _s.can('fin.tax.manage');
 
   @override

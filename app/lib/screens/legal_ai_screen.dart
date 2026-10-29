@@ -171,7 +171,7 @@ class _LegalAiScreenState extends State<LegalAiScreen> {
   }
 
   List<Widget> _draftView(BuildContext context, Map<String, dynamic> d) {
-    final s = Session.instance;
+    final s = AppSession.instance;
     return [
       const SizedBox(height: 16),
       if (d['see_lawyer'] == true) _banner(context, 'Have a lawyer check this draft before you use it.', warn: true),
@@ -224,7 +224,7 @@ class _AiReviewScreenState extends State<AiReviewScreen> {
   Future<void> _accept() async {
     setState(() => _saving = true);
     try {
-      final n = await Session.instance.db.rpc('accept_ai_dates', params: {
+      final n = await AppSession.instance.db.rpc('accept_ai_dates', params: {
         'p_contract': widget.contractId,
         'p_items': [for (final i in _picked) _dates[i]],
       });

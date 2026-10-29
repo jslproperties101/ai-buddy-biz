@@ -18,7 +18,7 @@ class PortPicker extends StatefulWidget {
 class _PortPickerState extends State<PortPicker> {
   List<Map<String, dynamic>> _rows = [];
   String _q = '';
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   void initState() {

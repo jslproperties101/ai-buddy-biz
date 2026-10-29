@@ -27,7 +27,7 @@ class _ContractScreenState extends State<ContractScreen> {
   Map<String, dynamic>? _lastReview;
   bool _loading = true;
   bool _busy = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   String get _status => (_c?['status'] ?? 'draft') as String;
   bool get _editable => Legal.editable(_status) && _s.can('law.manage');

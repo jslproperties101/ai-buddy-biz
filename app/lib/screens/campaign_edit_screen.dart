@@ -31,7 +31,7 @@ class _CampaignEditScreenState extends State<CampaignEditScreen> {
   bool _loading = true;
   bool _busy = false;
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   bool get _draft => _c == null || _c!['status'] == 'draft';
 
   @override

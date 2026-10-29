@@ -31,7 +31,7 @@ class LogisticsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final tabs = <(String, Widget)>[
       ('Shipments', const _ShipmentsTab()),
       if (s.can('log.shipment.manage')) ('Quote', const QuoteTab()),
@@ -62,7 +62,7 @@ class _ShipmentsTabState extends State<_ShipmentsTab> with AutomaticKeepAliveCli
   String _q = '';
   bool _loading = true;
   String? _error;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -208,7 +208,7 @@ class _QuoteTabState extends State<QuoteTab> with AutomaticKeepAliveClientMixin 
   final _manualRate = TextEditingController();
   Map<String, dynamic>? _landed;
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat _m(String cur) => NumberFormat.currency(symbol: '$cur ');
 
   @override
@@ -250,12 +250,15 @@ class _QuoteTabState extends State<QuoteTab> with AutomaticKeepAliveClientMixin 
       _snack('Enter the goods value');
       return;
     }
+    final String? originCountry = _originCountry.text.trim().isEmpty
+        ? (_origin?['country_code'] as String?)
+        : _originCountry.text.trim().toUpperCase();
     try {
       final r = await _s.db.rpc('landed_cost', params: {
         'p_tenant': _s.tenantId,
         'p_dest_country': _dest!['country_code'],
         'p_hs_code': _hs.text.trim(),
-        'p_origin_country': _originCountry.text.trim().isEmpty ? _origin?['country_code'] : _originCountry.text.trim().toUpperCase(),
+        'p_origin_country': originCountry,
         'p_goods_value': v,
         'p_freight': double.tryParse(_freight.text) ?? 0,
         'p_insurance': double.tryParse(_ins.text) ?? 0,
@@ -475,7 +478,7 @@ class _RatesTabState extends State<_RatesTab> with AutomaticKeepAliveClientMixin
   List<Map<String, dynamic>> _rows = [];
   bool _showExpired = false;
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   bool get wantKeepAlive => true;
@@ -569,11 +572,11 @@ class _RateFormState extends State<_RateForm> {
   late final _buy = TextEditingController(text: widget.rate?['buy_rate']?.toString() ?? '');
   late final _sell = TextEditingController(text: widget.rate?['sell_rate']?.toString() ?? '');
   late final _min = TextEditingController(text: widget.rate?['min_charge']?.toString() ?? '0');
-  late final _cur = TextEditingController(text: (widget.rate?['currency'] ?? Session.instance.currency) as String);
+  late final _cur = TextEditingController(text: (widget.rate?['currency'] ?? AppSession.instance.currency) as String);
   late final _days = TextEditingController(text: widget.rate?['transit_days']?.toString() ?? '');
   late DateTime _to = widget.rate == null ? DateTime.now().add(const Duration(days: 30)) : DateTime.parse(widget.rate!['valid_to'] as String);
   List<Map<String, dynamic>> _carriers = [];
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
 
   @override
   void initState() {
@@ -739,7 +742,7 @@ class _FleetTabState extends State<_FleetTab> with AutomaticKeepAliveClientMixin
   List<Map<String, dynamic>> _voyages = [];
   List<Map<String, dynamic>> _vessels = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   bool get _canEdit => _s.can('log.fleet.manage');
 
   @override

@@ -14,7 +14,7 @@ class PayrollListTab extends StatefulWidget {
 class _PayrollListTabState extends State<PayrollListTab> with AutomaticKeepAliveClientMixin {
   List<Map<String, dynamic>> _runs = [];
   bool _loading = true;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
 
   @override
@@ -113,7 +113,7 @@ class _PayrollRunScreenState extends State<PayrollRunScreen> {
   List<Map<String, dynamic>> _slips = [];
   bool _loading = true;
   bool _busy = false;
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
   bool get _draft => _run?['status'] == 'draft';
   bool get _canRun => _s.can('hr.payroll.run');
@@ -306,7 +306,7 @@ class _PayslipSheet extends StatefulWidget {
 class _PayslipSheetState extends State<_PayslipSheet> {
   late Map<String, dynamic> _p = widget.payslip;
   List<Map<String, dynamic>> _items = [];
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
 
   @override

@@ -17,7 +17,7 @@ class _SalesHistoryScreenState extends State<SalesHistoryScreen> {
   String? _error;
   final _search = TextEditingController();
 
-  Session get _s => Session.instance;
+  AppSession get _s => AppSession.instance;
   NumberFormat get _money => NumberFormat.currency(symbol: '${_s.currency} ');
 
   @override

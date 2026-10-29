@@ -60,7 +60,7 @@ class Legal {
 
   /// Company details that every template can use.
   static Future<Map<String, String>> companyValues() async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final t = await s.db
         .from('tenants')
         .select('name, legal_name, company_reg_no, address, phone, email')
@@ -92,7 +92,7 @@ class Legal {
   /// Calls the ai-legal edge function. Throws a readable message on failure.
   static Future<Map<String, dynamic>> ai(String kind,
       {String? contractId, String? text, String? question, String? instructions, String? baseText}) async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     try {
       final r = await s.db.functions.invoke('ai-legal', body: {
         'tenant_id': s.tenantId,
@@ -113,7 +113,7 @@ class Legal {
   }
 
   static Future<Map<String, dynamic>?> quota() async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     try {
       final q = await s.db.rpc('ai_quota', params: {'p_tenant': s.tenantId});
       return q == null ? null : Map<String, dynamic>.from(q as Map);

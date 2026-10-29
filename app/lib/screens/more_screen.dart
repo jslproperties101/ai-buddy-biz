@@ -28,7 +28,7 @@ class _MoreScreenState extends State<MoreScreen> {
   }
 
   Future<void> _pickOutlet() async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final o = await showModalBottomSheet<Outlet>(
       context: context,
       builder: (_) => SafeArea(
@@ -51,7 +51,7 @@ class _MoreScreenState extends State<MoreScreen> {
   }
 
   Future<void> _pickBusiness() async {
-    final s = Session.instance;
+    final s = AppSession.instance;
     final id = await showModalBottomSheet<String>(
       context: context,
       builder: (_) => SafeArea(
@@ -76,7 +76,7 @@ class _MoreScreenState extends State<MoreScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final s = Session.instance;
+    final s = AppSession.instance;
     return ListView(children: [
       for (final e in widget.extra)
         ListTile(
