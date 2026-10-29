@@ -20,7 +20,7 @@ Before testing:
 - [ ] Templates → Mutual NDA → Use → contract LAW-00001 opens with your company name, reg. no. and address already filled
 - [ ] Red line lists the blanks left; tap **Fill in** → labelled fields (dates have a date picker, defaults pre-filled) → Apply → no blanks left
 - [ ] Details (pencil): link a customer, value, start/end date, notice days, auto-renew → Save
-- [ ] Setting an end date + notice days adds "Expiry" and "Notice deadline" under Key dates and in the Calendar
+- [ ] Setting an end date + notice days adds an expiry reminder and "Last day to give notice" under Key dates and in the Calendar
 - [ ] Edit the text directly → saved; ⋮ → Save a version → Saved versions shows it
 - [ ] ⋮ → Mark in review → Back to draft works
 - [ ] Contract list: search by title/number; filters Active / Awaiting signature / Signed / All
