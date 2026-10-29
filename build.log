@@ -1,0 +1,300 @@
+import '../services/session.dart';
+^^^^^^^
+lib/screens/team_access_screen.dart:4:1: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+import '../services/session.dart';
+^^^^^^^
+lib/widgets/contact_picker.dart:4:1: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+import '../services/session.dart';
+^^^^^^^
+lib/screens/employee_screen.dart:5:1: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+import '../services/session.dart';
+^^^^^^^
+lib/screens/payroll_screen.dart:6:1: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+import '../services/session.dart';
+^^^^^^^
+lib/screens/product_edit_screen.dart:5:1: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+import '../services/session.dart';
+^^^^^^^
+lib/widgets/timeline.dart:5:1: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+import '../services/session.dart';
+^^^^^^^
+lib/screens/po_screen.dart:6:1: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+import '../services/session.dart';
+^^^^^^^
+lib/screens/logistics_screen.dart:572:78: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  late final _cur = TextEditingController(text: (widget.rate?['currency'] ?? Session.instance.currency) as String);
+                                                                             ^^^^^^^
+lib/main.dart:67:18: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+      _loading = Session.instance.load().then((has) async {
+                 ^^^^^^^
+lib/screens/setup_screen.dart:37:13: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+      await Session.instance.db.rpc('create_tenant', params: {'p_name': _name.text.trim(), 'p_template': _template});
+            ^^^^^^^
+lib/screens/setup_screen.dart:53:41: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+        actions: [IconButton(onPressed: Session.instance.signOut, icon: const Icon(Icons.logout))],
+                                        ^^^^^^^
+lib/screens/setup_screen.dart:60:50: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+            subtitle: Text('Ask them to invite ${Session.instance.db.auth.currentUser?.email ?? 'your email'}, '
+                                                 ^^^^^^^
+lib/services/sales_queue.dart:23:39: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  String get _key => 'pending_sales_${Session.instance.tenantId}';
+                                      ^^^^^^^
+lib/services/sales_queue.dart:40:25: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+      final res = await Session.instance.db.rpc('complete_sale', params: {'p': payload});
+                        ^^^^^^^
+lib/services/sales_queue.dart:64:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+        await Session.instance.db.rpc('complete_sale', params: {'p': items[i]});
+              ^^^^^^^
+lib/screens/assistant_screen.dart:18:13: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  final s = Session.instance;
+            ^^^^^^^
+lib/screens/assistant_screen.dart:31:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/screens/assistant_screen.dart:64:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/assistant_screen.dart:220:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/assistant_screen.dart:295:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/assistant_screen.dart:498:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/assistant_screen.dart:590:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/crm_screen.dart:15:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/screens/crm_screen.dart:49:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/crm_screen.dart:227:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/crm_screen.dart:380:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/crm_screen.dart:475:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/invoices_screen.dart:20:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/kids_screen.dart:63:35: Error: The argument type 'List<Object>' can't be assigned to the parameter type 'Iterable<Future<dynamic>>'.
+ - 'List' is from 'dart:core'.
+ - 'Object' is from 'dart:core'.
+ - 'Iterable' is from 'dart:core'.
+ - 'Future' is from 'dart:async'.
+      final r = await Future.wait([
+                                  ^
+lib/screens/logistics_screen.dart:34:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/screens/logistics_screen.dart:65:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/logistics_screen.dart:211:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/logistics_screen.dart:258:133: Error: Expected ':' before this.
+        'p_origin_country': _originCountry.text.trim().isEmpty ? _origin?['country_code'] : _originCountry.text.trim().toUpperCase(),
+                                                                                          ^
+lib/screens/logistics_screen.dart:258:133: Error: Expected an identifier, but got ','.
+Try inserting an identifier before ','.
+        'p_origin_country': _originCountry.text.trim().isEmpty ? _origin?['country_code'] : _originCountry.text.trim().toUpperCase(),
+                                                                                          ^
+lib/screens/logistics_screen.dart:258:66: Error: A value of type 'Map<String, dynamic>?' can't be assigned to a variable of type 'bool'.
+ - 'Map' is from 'dart:core'.
+        'p_origin_country': _originCountry.text.trim().isEmpty ? _origin?['country_code'] : _originCountry.text.trim().toUpperCase(),
+                                                                 ^
+lib/screens/logistics_screen.dart:478:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/logistics_screen.dart:576:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/logistics_screen.dart:742:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/pos_screen.dart:23:22: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  TaxRate get tax => Session.instance.taxFor(variant.taxCode);
+                     ^^^^^^^
+lib/screens/pos_screen.dart:47:63: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  NumberFormat get _money => NumberFormat.currency(symbol: '${Session.instance.currency} ');
+                                                              ^^^^^^^
+lib/screens/pos_screen.dart:100:27: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+              helperText: Session.instance.can('pos.sale.discount') ? null : 'Up to 10% without a manager',
+                          ^^^^^^^
+lib/screens/pos_screen.dart:128:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/screens/team_screen.dart:16:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/screens/team_screen.dart:44:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/team_screen.dart:145:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/team_screen.dart:254:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/team_screen.dart:358:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/products_screen.dart:24:63: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  NumberFormat get _money => NumberFormat.currency(symbol: '${Session.instance.currency} ');
+                                                              ^^^^^^^
+lib/screens/products_screen.dart:33:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/screens/products_screen.dart:144:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/screens/stock_screen.dart:22:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/campaign_edit_screen.dart:34:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/contact_screen.dart:12:13: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  final s = Session.instance;
+            ^^^^^^^
+lib/screens/contact_screen.dart:130:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/deal_screen.dart:48:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/invoice_edit_screen.dart:40:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/services/kids.dart:107:23: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+      final u = await Session.instance.db.storage.from('kids').createSignedUrl(path, 3600);
+                      ^^^^^^^
+lib/services/kids.dart:131:11: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    await Session.instance.db.storage.from('kids').uploadBinary(path, bytes, fileOptions: const FileOptions(contentType: 'image/jpeg'));
+          ^^^^^^^
+lib/services/kids.dart:241:29: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  SupabaseClient get _db => Session.instance.db;
+                            ^^^^^^^
+lib/services/legal.dart:63:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/services/legal.dart:95:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/services/legal.dart:116:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/widgets/port_picker.dart:21:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/shipment_screen.dart:81:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/services/orders.dart:30:69: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  static NumberFormat get money => NumberFormat.currency(symbol: '${Session.instance.currency} ');
+                                                                    ^^^^^^^
+lib/services/orders.dart:85:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/services/orders.dart:103:15: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+    final s = Session.instance;
+              ^^^^^^^
+lib/services/orders.dart:105:33: Error: The argument type 'List<dynamic>' can't be assigned to the parameter type 'Iterable<Future<dynamic>>'.
+ - 'List' is from 'dart:core'.
+ - 'Iterable' is from 'dart:core'.
+ - 'Future' is from 'dart:async'.
+    final r = await Future.wait([
+                                ^
+lib/screens/crm_settings_screen.dart:25:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/modules_screen.dart:28:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/my_work_screen.dart:39:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/reports_screen.dart:25:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/reports_screen.dart:34:24: Error: A value of type 'List<(String, dynamic)>' can't be assigned to a variable of type 'List<(String, bool)>'.
+ - 'List' is from 'dart:core'.
+  ].where((t) => t.$2).toList();
+                       ^
+lib/screens/sales_history_screen.dart:20:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/shift_screen.dart:20:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/suppliers_screen.dart:35:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/suppliers_screen.dart:198:13: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  final s = Session.instance;
+            ^^^^^^^
+lib/screens/suppliers_screen.dart:313:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/tax_settings_screen.dart:17:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/team_access_screen.dart:18:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/team_access_screen.dart:28:35: Error: The argument type 'List<dynamic>' can't be assigned to the parameter type 'Iterable<Future<dynamic>>'.
+ - 'List' is from 'dart:core'.
+ - 'Iterable' is from 'dart:core'.
+ - 'Future' is from 'dart:async'.
+      final r = await Future.wait([
+                                  ^
+lib/widgets/contact_picker.dart:26:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/employee_screen.dart:26:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/payroll_screen.dart:17:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/payroll_screen.dart:116:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/payroll_screen.dart:309:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/product_edit_screen.dart:44:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/widgets/timeline.dart:35:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+lib/screens/po_screen.dart:38:21: Error: 'Session' is imported from both 'package:ai_buddy_biz/services/session.dart' and 'package:gotrue/src/types/session.dart'.
+  Session get _s => Session.instance;
+                    ^^^^^^^
+Target kernel_snapshot_program failed: Exception
+
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':app:compileFlutterBuildRelease'.
+> Process 'command '/opt/hostedtoolcache/flutter/stable-3.47.8-x64/flutter/bin/flutter'' finished with non-zero exit value 1
+
+* Try:
+> Run with --stacktrace option to get the stack trace.
+> Run with --info or --debug option to get more log output.
+> Run with --scan to get full insights from a Build Scan (powered by Develocity).
+> Get more help at https://help.gradle.org.
+
+BUILD FAILED in 3m 11s
+Running Gradle task 'assembleRelease'...                          191.6s
+Gradle task assembleRelease failed with exit code 1
