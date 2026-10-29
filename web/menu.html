@@ -1,0 +1,226 @@
+<!doctype html>
+<!--
+  Ai buddy Biz — customer menu & ordering page.
+  Host anywhere (same folder as order.html and book.html) and set "Web pages address" in the app (Orders → Settings).
+  Replace SUPABASE_URL and SUPABASE_ANON_KEY below.
+    At the table:  menu.html?k=<table QR token>        (printed QR codes link here)
+    Online order:  menu.html?k=<business online key>   (pickup / delivery)
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Menu</title>
+<style>
+  :root { --fg:#111; --muted:#666; --bg:#fff; --card:#f5f6f6; --accent:#0f766e; --line:#ddd; --err:#b91c1c; --ok:#047857; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#eee; --muted:#aaa; --bg:#121212; --card:#1e2020; --accent:#2dd4bf; --line:#3a3a3a; --err:#f87171; --ok:#34d399; } }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); margin: 0; line-height: 1.45; }
+  header { position: sticky; top: 0; background: var(--bg); border-bottom: 1px solid var(--line); z-index: 5; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 12px 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .cats { display: flex; gap: 8px; overflow-x: auto; padding: 8px 16px; max-width: 760px; margin: 0 auto; scrollbar-width: none; }
+  .cats a { white-space: nowrap; text-decoration: none; color: var(--fg); background: var(--card); padding: 6px 12px; border-radius: 99px; font-size: 14px; }
+  h2 { font-size: 17px; margin: 20px 0 8px; }
+  .item { display: flex; gap: 12px; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .item .name { font-weight: 600; }
+  .item .desc { color: var(--muted); font-size: 13px; }
+  .price { white-space: nowrap; font-weight: 600; }
+  button { font: inherit; border: 0; border-radius: 10px; padding: 10px 14px; background: var(--accent); color: #fff; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+  button:disabled { opacity: .45; cursor: default; }
+  .soldout { color: var(--err); font-size: 13px; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px; background: var(--bg); border-top: 1px solid var(--line); }
+  .bar button { width: 100%; max-width: 728px; display: block; margin: 0 auto; padding: 14px; font-size: 16px; }
+  dialog { border: 0; border-radius: 16px; padding: 0; width: min(560px, 100vw - 24px); background: var(--bg); color: var(--fg); }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  .dlg { padding: 16px; max-height: 85vh; overflow: auto; }
+  .opt { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .opt span { flex: 1; }
+  .qty { display: inline-flex; align-items: center; gap: 10px; }
+  .qty button { padding: 4px 12px; }
+  input, textarea, select { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; margin: 4px 0 10px; }
+  .row { display: flex; gap: 8px; } .row > * { flex: 1; }
+  .line { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; }
+  .err { color: var(--err); } .ok { color: var(--ok); }
+  .seg { display: flex; gap: 6px; margin: 6px 0 12px; } .seg button { flex: 1; } .seg .off { background: var(--card); color: var(--fg); }
+  main { padding-bottom: 96px; }
+</style>
+</head>
+<body>
+<header><div class="wrap" id="head"><h1>Loading…</h1></div><nav class="cats" id="cats"></nav></header>
+<main class="wrap" id="menu"></main>
+<div class="bar" id="bar" hidden><button id="viewcart"></button></div>
+<dialog id="dlg"><div class="dlg" id="dlgbody"></div></dialog>
+<script>
+  const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
+  const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
+
+  const key = new URLSearchParams(location.search).get("k") || "";
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  let M = null;                  // menu
+  let cart = [];                 // {item, qty, mods:[{id,name,price}], note}
+  try { cart = JSON.parse(sessionStorage.getItem("cart:" + key) || "[]"); } catch (_) {}
+  const save = () => { try { sessionStorage.setItem("cart:" + key, JSON.stringify(cart)); } catch (_) {} };
+  const money = (n) => (M?.currency === "MYR" ? "RM" : (M?.currency || "") + " ") + Number(n).toFixed(2);
+  const dlg = document.getElementById("dlg"), dlgBody = document.getElementById("dlgbody");
+
+  async function rpc(name, body) {
+    const r = await fetch(SUPABASE_URL + "/rest/v1/rpc/" + name, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((data && data.message) || "Something went wrong — please try again");
+    return data;
+  }
+
+  async function load() {
+    try { M = await rpc("public_menu", { p_key: key }); }
+    catch (e) { document.getElementById("head").innerHTML = `<h1>Menu not available</h1><p class="muted">${esc(e.message)}</p>`; return; }
+    document.title = M.business;
+    // drop cart lines that are no longer on the menu
+    cart = cart.filter((l) => M.items.some((i) => i.variant_id === l.item.variant_id && !i.sold_out));
+    save();
+    const where = M.mode === "table" ? `Table ${esc(M.table)}` : esc(M.outlet);
+    document.getElementById("head").innerHTML = `<h1>${esc(M.business)}</h1>
+      <div class="muted">${where}${M.ordering ? "" : " · ordering is closed"}${M.mode !== "table" && !M.open_now ? " · closed now (you can order for later)" : ""}</div>`;
+    const cats = [...M.categories, { id: null, name: "Other" }].filter((c) => M.items.some((i) => i.category_id === c.id));
+    document.getElementById("cats").innerHTML = cats.map((c) => `<a href="#c-${c.id}">${esc(c.name)}</a>`).join("");
+    document.getElementById("menu").innerHTML = cats.map((c) => `<h2 id="c-${c.id}">${esc(c.name)}</h2>` +
+      M.items.filter((i) => i.category_id === c.id).map((i) => `
+        <div class="item">
+          <div><div class="name">${esc(i.name)}${i.variant ? " — " + esc(i.variant) : ""}</div>
+            ${i.description ? `<div class="desc">${esc(i.description)}</div>` : ""}
+            ${i.sold_out ? `<div class="soldout">Sold out</div>` : ""}</div>
+          <div style="text-align:right"><div class="price">${money(i.price)}</div>
+            ${M.ordering && !i.sold_out ? `<button class="ghost" data-add="${i.variant_id}" style="margin-top:6px;padding:6px 12px">Add</button>` : ""}</div>
+        </div>`).join("")).join("") || `<p class="muted">The menu is empty.</p>`;
+    document.querySelectorAll("[data-add]").forEach((b) => b.onclick = () => openItem(M.items.find((i) => i.variant_id === b.dataset.add)));
+    renderBar();
+  }
+
+  function renderBar() {
+    const n = cart.reduce((a, l) => a + l.qty, 0);
+    document.getElementById("bar").hidden = n === 0;
+    document.getElementById("viewcart").textContent = `View order · ${n} item${n === 1 ? "" : "s"} · ${money(cartTotal())}`;
+  }
+  const lineTotal = (l) => l.qty * (Number(l.item.price) + l.mods.reduce((a, m) => a + Number(m.price), 0));
+  const cartTotal = () => cart.reduce((a, l) => a + lineTotal(l), 0);
+
+  function openItem(item) {
+    let qty = 1;
+    const groups = item.groups || [];
+    dlgBody.innerHTML = `<h2 style="margin-top:0">${esc(item.name)}</h2>
+      ${item.description ? `<p class="muted">${esc(item.description)}</p>` : ""}
+      ${groups.map((g) => `<div style="margin-top:12px"><strong>${esc(g.name)}</strong>
+          <span class="muted">${g.min > 0 ? (g.max === 1 ? "Choose 1" : `Choose ${g.min}–${g.max}`) : (g.max === 1 ? "Optional" : `Up to ${g.max}`)}</span>
+          ${g.options.map((o) => `<label class="opt"><input style="width:auto;margin:0" type="${g.max === 1 ? "radio" : "checkbox"}" name="g-${g.id}" value="${o.id}">
+            <span>${esc(o.name)}</span>${Number(o.price) > 0 ? `<span class="muted">+${money(o.price)}</span>` : ""}</label>`).join("")}</div>`).join("")}
+      <label style="display:block;margin-top:12px">Note for the kitchen<input id="inote" maxlength="200" placeholder="e.g. no onion"></label>
+      <div class="row" style="align-items:center"><div class="qty"><button class="ghost" id="minus">−</button><span id="q">1</span><button class="ghost" id="plus">+</button></div>
+        <button id="addbtn">Add · ${money(item.price)}</button></div>
+      <p class="err" id="ierr"></p>
+      <button class="ghost" id="close" style="width:100%">Cancel</button>`;
+    const chosen = () => groups.flatMap((g) => [...dlgBody.querySelectorAll(`[name="g-${g.id}"]:checked`)].map((x) => g.options.find((o) => o.id === x.value)));
+    const refresh = () => {
+      document.getElementById("q").textContent = qty;
+      const unit = Number(item.price) + chosen().reduce((a, m) => a + Number(m.price), 0);
+      document.getElementById("addbtn").textContent = `Add · ${money(unit * qty)}`;
+    };
+    dlgBody.querySelectorAll("input[type=radio],input[type=checkbox]").forEach((x) => x.onchange = refresh);
+    document.getElementById("minus").onclick = () => { qty = Math.max(1, qty - 1); refresh(); };
+    document.getElementById("plus").onclick = () => { qty = Math.min(20, qty + 1); refresh(); };
+    document.getElementById("close").onclick = () => dlg.close();
+    document.getElementById("addbtn").onclick = () => {
+      for (const g of groups) {
+        const n = dlgBody.querySelectorAll(`[name="g-${g.id}"]:checked`).length;
+        if (n < g.min) { document.getElementById("ierr").textContent = `Please choose ${g.name}.`; return; }
+        if (n > g.max) { document.getElementById("ierr").textContent = `Choose at most ${g.max} for ${g.name}.`; return; }
+      }
+      cart.push({ item, qty, mods: chosen(), note: document.getElementById("inote").value.trim() });
+      save(); renderBar(); dlg.close();
+    };
+    dlg.showModal();
+  }
+
+  function openCart() {
+    const table = M.mode === "table";
+    let fulfil = table ? "here" : (M.pickup ? "pickup" : "delivery");
+    const render = () => {
+      const zone = M.zones.find((z) => z.id === document.getElementById("zone")?.value);
+      const svc = cartTotal() * Number(M.service_charge_pct || 0) / 100;
+      const fee = fulfil === "delivery" && zone ? Number(zone.fee) : 0;
+      dlgBody.innerHTML = `<h2 style="margin-top:0">Your order</h2>
+        ${cart.map((l, i) => `<div class="line"><div><strong>${l.qty}×</strong> ${esc(l.item.name)}
+            ${l.mods.length ? `<div class="muted">${l.mods.map((m) => esc(m.name)).join(", ")}</div>` : ""}
+            ${l.note ? `<div class="muted">“${esc(l.note)}”</div>` : ""}</div>
+          <div style="text-align:right">${money(lineTotal(l))}<br><button class="ghost" data-rm="${i}" style="padding:2px 8px;font-size:13px">Remove</button></div></div>`).join("")}
+        <div class="line"><span>Items</span><span>${money(cartTotal())}</span></div>
+        ${svc > 0 ? `<div class="line muted"><span>Service charge ${Number(M.service_charge_pct)}%</span><span>${money(svc)}</span></div>` : ""}
+        ${fee > 0 ? `<div class="line muted"><span>Delivery</span><span>${money(fee)}</span></div>` : ""}
+        <p class="muted">Tax, if any, is added on your receipt.</p>
+        ${table ? `<label>Your name (optional)<input id="cname" maxlength="80"></label>` : `
+          <div class="seg">${M.pickup ? `<button class="${fulfil === "pickup" ? "" : "off"}" data-f="pickup">Pickup</button>` : ""}
+            ${M.delivery ? `<button class="${fulfil === "delivery" ? "" : "off"}" data-f="delivery">Delivery</button>` : ""}</div>
+          <label>Name<input id="cname" maxlength="80" autocomplete="name"></label>
+          <div class="row"><label>Phone<input id="cphone" type="tel" autocomplete="tel"></label>
+            <label>Email (optional)<input id="cemail" type="email" autocomplete="email"></label></div>
+          ${fulfil === "delivery" ? `<label>Area<select id="zone">${M.zones.map((z) => `<option value="${z.id}" ${zone && zone.id === z.id ? "selected" : ""}>${esc(z.name)} · ${money(z.fee)}${Number(z.min_order) > 0 ? " · min " + money(z.min_order) : ""}</option>`).join("")}</select></label>
+            <label>Address<textarea id="caddr" rows="2" autocomplete="street-address"></textarea></label>
+            <label>Postcode<input id="cpost" inputmode="numeric" maxlength="10" autocomplete="postal-code"></label>` : ""}
+          <label>When<select id="cwhen"><option value="">${M.open_now ? "As soon as possible" : "Choose a time"}</option>${timeOptions()}</select></label>`}
+        <label>Note (optional)<input id="cnote" maxlength="300"></label>
+        <p class="err" id="cerr"></p>
+        <button id="place" style="width:100%">Place order · ${money(cartTotal() + svc + fee)}</button>
+        <button class="ghost" id="close" style="width:100%;margin-top:8px">Back to menu</button>`;
+      dlgBody.querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { cart.splice(+b.dataset.rm, 1); save(); renderBar(); if (!cart.length) dlg.close(); else render(); });
+      dlgBody.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { fulfil = b.dataset.f; render(); });
+      const z = document.getElementById("zone"); if (z) z.onchange = render;
+      document.getElementById("close").onclick = () => dlg.close();
+      document.getElementById("place").onclick = place;
+    };
+    const val = (id) => (document.getElementById(id)?.value || "").trim();
+    async function place() {
+      const btn = document.getElementById("place"), err = document.getElementById("cerr");
+      err.textContent = "";
+      if (!table) {
+        if (val("cname").length < 2) return (err.textContent = "Please enter your name.");
+        if (val("cphone").replace(/\D/g, "").length < 9) return (err.textContent = "Please enter your phone number.");
+        if (!M.open_now && !val("cwhen")) return (err.textContent = "We're closed now — please choose a time.");
+      }
+      btn.disabled = true; btn.textContent = "Sending…";
+      try {
+        const items = cart.map((l) => ({ variant_id: l.item.variant_id, qty: l.qty, modifier_ids: l.mods.map((m) => m.id), note: l.note || null }));
+        const customer = { name: val("cname"), phone: val("cphone"), email: val("cemail"), note: val("cnote"), fulfilment: fulfil,
+          address: val("caddr"), postcode: val("cpost"), zone_id: val("zone") || null, scheduled_for: val("cwhen") || null };
+        const r = await rpc("public_place_order", { p_key: key, p_items: items, p_customer: customer });
+        cart = []; save();
+        location.href = "order.html?o=" + encodeURIComponent(r.track_token);
+      } catch (e) {
+        err.textContent = e.message; btn.disabled = false; btn.textContent = "Try again";
+      }
+    }
+    render();
+    dlg.showModal();
+  }
+
+  function timeOptions() {
+    const out = [], now = new Date(), start = new Date(now.getTime() + (M.prep_minutes + 10) * 60000);
+    start.setMinutes(Math.ceil(start.getMinutes() / 15) * 15, 0, 0);
+    for (let i = 0; i < 48; i++) {
+      const t = new Date(start.getTime() + i * 15 * 60000);
+      if (t - now > 2 * 86400000) break;
+      out.push(`<option value="${t.toISOString()}">${t.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}</option>`);
+    }
+    return out.join("");
+  }
+
+  document.getElementById("viewcart").onclick = openCart;
+  dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
+  load();
+</script>
+</body>
+</html>
