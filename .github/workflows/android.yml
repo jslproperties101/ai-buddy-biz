@@ -72,12 +72,26 @@ jobs:
           TRACK_URL: ${{ vars.TRACK_URL }}
           SIGN_URL: ${{ vars.SIGN_URL }}
         run: |
+          set -o pipefail
           flutter build apk --release \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
             --dart-define=TRACK_URL="$TRACK_URL" \
-            --dart-define=SIGN_URL="$SIGN_URL"
+            --dart-define=SIGN_URL="$SIGN_URL" 2>&1 | tee "$RUNNER_TEMP/build.log"
           cp build/app/outputs/flutter-apk/app-release.apk "ai-buddy-biz-batch-$BATCH.apk"
+
+      - name: Save build log on failure
+        if: failure()
+        run: |
+          cd "$RUNNER_TEMP"
+          git clone --depth 1 "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" logrepo
+          cd logrepo
+          git checkout --orphan build-logs
+          git rm -rf . -q || true
+          tail -n 300 "$RUNNER_TEMP/build.log" > build.log
+          git add build.log
+          git -c user.name=ci -c user.email=ci@example.com commit -qm "build log"
+          git push -f origin build-logs
 
       - uses: actions/upload-artifact@v4
         with:
