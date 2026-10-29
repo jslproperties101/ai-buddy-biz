@@ -18,7 +18,7 @@ All-in-one business super app: POS, inventory, invoicing, accounting, tax, CRM, 
 | F | HR & payroll: staff, attendance, EA overtime, leave, claims, EPF/SOCSO/EIS/PCB, payslips | Built |
 | G | Legal & compliance: contracts, templates, e-signing, compliance calendar, AI legal assistant | Built |
 | H | Kids care: rooms & ratios, safe check-in/out, daily logs & photos, medicine, incidents, parent app, fees; team invitations | Built |
-| I | Restaurant, e-commerce sync, bookings, delivery, customer app | |
+| I | Restaurant & orders (tables, kitchen display, QR/online ordering), delivery, bookings, Shopify/WooCommerce sync, customer web app | Built |
 | J | AI agents across modules | |
 | K | Business plan and valuation roadmap | |
 
@@ -26,7 +26,7 @@ All-in-one business super app: POS, inventory, invoicing, accounting, tax, CRM, 
 
 Flutter app. The APK is built by GitHub Actions (`.github/workflows/android.yml`) on every push to `main` and published to a release per batch:
 
-`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-h/ai-buddy-biz-batch-h.apk`
+`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-i/ai-buddy-biz-batch-i.apk`
 
 Set repo secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` first, and apply `supabase/migrations/*.sql` in order.
 
@@ -121,3 +121,24 @@ Campaigns and "send from business" messages are queued in `outbound_messages` an
 - **Fees**: Kids → Setup → Monthly fees creates one invoice per paying guardian (sibling discount, first-time registration and deposit,
   late pick-up fees, extra charges) in Invoices. Run it once a month; families already invoiced are skipped.
 - Needs the `send-messages` function (Batch D) for check-in, pick-up, incident and invitation messages.
+
+## Restaurant, orders, delivery & bookings (Batch I)
+
+- Turn on **Restaurant, orders & bookings** in More → Modules (on by default for the café template). New tab: **Orders**
+  (Floor · Orders · Kitchen · Bookings). Riders (Driver role) get a **Deliveries** tab; the **Kitchen** role sees the kitchen display.
+- Every order — dine-in, takeaway, delivery, QR at the table, online, GrabFood/foodpanda (entered as "App" orders), Shopify/WooCommerce —
+  is paid through the normal POS sale (receipt, stock, accounts, loyalty). Service charge and delivery fee are added as lines.
+- **Customer web app** (`web/menu.html`, `web/order.html`, `web/book.html`): host the three files together (GitHub Pages, Netlify,
+  Supabase Storage…), put your project URL and anon key in each, then set **Orders → ⚙ → Ordering & booking options → Web pages address**.
+  Print table QR codes from Areas & tables. Share the online ordering and booking links from the same screen.
+- **Bookings**: services with duration and clean-up time, staff/rooms that offer them, opening hours, tables. Double-booking is blocked
+  by the database. Reminders: run `select queue_booking_reminders();` daily (Supabase Cron) or tap the button in settings.
+- **Shopify / WooCommerce**: connect in Orders → ⚙ → Online shop sync (keys are stored server-side only). Deploy and schedule:
+  ```
+  supabase functions deploy shop-sync
+  select cron.schedule('shop-sync', '*/5 * * * *', $$ select net.http_post(
+    url := 'https://<project-ref>.supabase.co/functions/v1/shop-sync',
+    headers := jsonb_build_object('Authorization', 'Bearer <SERVICE_ROLE_KEY>')) $$);
+  ```
+  Products match by SKU. Shopify uses the GraphQL Admin API (default version 2026-07; set `api_version` in the keys to change).
+- Online payments (card/FPX/e-wallet) for web orders are not built in yet: customers pay on pickup/delivery or in the shop.

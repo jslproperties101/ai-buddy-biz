@@ -9,6 +9,7 @@ import 'invoices_screen.dart';
 import 'kids_screen.dart';
 import 'legal_screen.dart';
 import 'logistics_screen.dart';
+import 'orders_screen.dart';
 import 'more_screen.dart';
 import 'parent_screen.dart';
 import 'pos_screen.dart';
@@ -76,6 +77,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final features = <(String, IconData, Widget)>[
       if (s.has('KIDS') && s.can('kids.parent')) ('My children', Icons.family_restroom, const ParentScreen()),
       if (s.has('KIDS') && s.can('kids.view')) ('Kids', Icons.child_care, const KidsScreen()),
+      if (s.has('EXT') && (s.can('ord.view') || s.can('book.view') || s.can('book.manage')))
+        ('Orders', Icons.restaurant_menu, const OrdersScreen()),
+      if (s.has('EXT') && s.can('ord.deliver') && !s.can('ord.view')) ('Deliveries', Icons.delivery_dining, const DeliveriesScreen()),
       if (s.has('LOG') && s.can('log.shipment.view')) ('Shipping', Icons.local_shipping_outlined, const LogisticsScreen()),
       if (s.has('POS') && s.can('pos.sale.create')) ('Sell', Icons.point_of_sale, PosScreen(onSaleDone: _refreshPending)),
       if (s.has('INV') && s.can('inv.product.view'))

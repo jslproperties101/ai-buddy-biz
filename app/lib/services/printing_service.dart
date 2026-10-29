@@ -746,6 +746,64 @@ class PrintingService {
     await Printing.layoutPdf(name: 'Incident $childName', onLayout: (_) async => doc.save());
   }
 
+  /// QR code cards for tables: customers scan to see the menu and order at their table.
+  static Future<void> printTableQrs({required List<Map<String, dynamic>> tables, required String Function(Map<String, dynamic>) urlFor}) async {
+    final s = Session.instance;
+    final doc = pw.Document();
+    doc.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(24),
+      build: (_) => [
+        pw.Wrap(spacing: 16, runSpacing: 16, children: [
+          for (final t in tables)
+            pw.Container(
+              width: 170,
+              padding: const pw.EdgeInsets.all(12),
+              decoration: pw.BoxDecoration(border: pw.Border.all(width: 0.8), borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8))),
+              child: pw.Column(children: [
+                pw.Text(_safe(s.tenantName), style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold), textAlign: pw.TextAlign.center),
+                pw.SizedBox(height: 6),
+                pw.SizedBox(width: 130, height: 130, child: pw.BarcodeWidget(barcode: pw.Barcode.qrCode(), data: urlFor(t))),
+                pw.SizedBox(height: 6),
+                pw.Text('Table ${_safe('${t['name']}')}', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
+                pw.Text('Scan to see the menu and order', style: const pw.TextStyle(fontSize: 8)),
+                pw.Text('Imbas untuk menu & pesanan', style: const pw.TextStyle(fontSize: 8)),
+              ]),
+            ),
+        ]),
+      ],
+    ));
+    await Printing.layoutPdf(name: 'Table QR codes', onLayout: (_) async => doc.save());
+  }
+
+  /// Bill to show the table before paying (not a receipt).
+  static Future<void> printOrderBill({required Map<String, dynamic> order, required Map<String, dynamic> quote, double widthMm = 80}) async {
+    final s = Session.instance;
+    final style = const pw.TextStyle(fontSize: 8);
+    final bold = pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold);
+    pw.Widget row(String a, String b, {bool b2 = false}) =>
+        pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Expanded(child: pw.Text(_safe(a), style: b2 ? bold : style)), pw.Text(b, style: b2 ? bold : style)]);
+    final table = (order['dining_tables'] as Map?)?['name'];
+    final doc = pw.Document();
+    doc.addPage(pw.Page(
+      pageFormat: PdfPageFormat(widthMm * PdfPageFormat.mm, double.infinity, marginAll: 4 * PdfPageFormat.mm),
+      build: (_) => pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.stretch, children: [
+        pw.Text(_safe(s.tenantName), textAlign: pw.TextAlign.center, style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold)),
+        pw.Text('BILL ${order['order_no']}${table != null ? ' · Table $table' : ''}', textAlign: pw.TextAlign.center, style: bold),
+        pw.Text(DateFormat('d MMM yyyy HH:mm').format(DateTime.now()), textAlign: pw.TextAlign.center, style: style),
+        pw.Divider(thickness: 0.5),
+        for (final l in quote['lines'] as List) row('${_q((l['qty'] as num).toDouble())} x ${l['name']}', _money.format(((l['qty'] as num) * (l['unit_price'] as num)))),
+        pw.Divider(thickness: 0.5),
+        row('Subtotal', _money.format(quote['subtotal'])),
+        row('Tax', _money.format(quote['tax'])),
+        row('TOTAL', _money.format(quote['total']), b2: true),
+        pw.SizedBox(height: 6),
+        pw.Text('This is not a receipt.', textAlign: pw.TextAlign.center, style: style),
+      ]),
+    ));
+    await Printing.layoutPdf(name: 'Bill ${order['order_no']}', onLayout: (_) async => doc.save());
+  }
+
   /// The built-in PDF fonts only cover Western characters; swap common symbols and drop the rest.
   static String _safe(String t) {
     const map = {'‘': "'", '’': "'", '“': '"', '”': '"', '–': '-', '—': '-', '…': '...', '•': '-', ' ': ' ', '→': '->', '✓': 'v', '✔': 'v'};

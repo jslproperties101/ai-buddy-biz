@@ -676,6 +676,16 @@ begin
   update orders set rider_id = p_rider where id = o.id;
 end $$;
 
+create or replace function public.order_riders(p_tenant uuid)
+returns table (user_id uuid, name text)
+language sql stable security definer set search_path = public as $$
+  select m.user_id, coalesce((select full_name from employees e where e.tenant_id = p_tenant and e.user_id = m.user_id limit 1),
+                             (select email from auth.users u where u.id = m.user_id))
+  from memberships m join role_permissions rp on rp.role_id = m.role_id and rp.permission_code = 'ord.deliver'
+  where m.tenant_id = p_tenant and m.active and has_perm(p_tenant, 'ord.take')
+  order by 2;
+$$;
+
 create or replace function public.delivery_update(p_order uuid, p_status text)
 returns void language plpgsql security definer set search_path = public as $$
 declare o orders;
@@ -975,23 +985,48 @@ begin
   return oid;
 end $$;
 
+-- The product sold for a service (created on first use)
+create or replace function public.service_variant(p_service uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare svc booking_services; pid uuid; vid uuid;
+begin
+  select * into svc from booking_services where id = p_service;
+  if svc.variant_id is not null then return svc.variant_id; end if;
+  insert into products (tenant_id, name, kind, on_menu) values (svc.tenant_id, svc.name, 'service', false) returning id into pid;
+  insert into product_variants (tenant_id, product_id, sku, price, track_stock)
+  values (svc.tenant_id, pid, 'SVC-' || upper(substr(replace(svc.id::text, '-', ''), 1, 8)), svc.price, false) returning id into vid;
+  update booking_services set variant_id = vid where id = svc.id;
+  return vid;
+end $$;
+
+create or replace function public.booking_quote(p_booking uuid)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare b bookings; svc booking_services; vid uuid; t record; v_net numeric; v_tax numeric;
+begin
+  select * into b from bookings where id = p_booking;
+  if not found or not has_perm(b.tenant_id, 'book.manage') then raise exception 'Not allowed'; end if;
+  if b.kind <> 'service' then raise exception 'Table bookings are paid through their order'; end if;
+  select * into svc from booking_services where id = b.service_id;
+  vid := service_variant(svc.id);
+  select r.* into t from product_variants v join products p on p.id = v.product_id,
+       lateral resolve_tax(b.tenant_id, b.outlet_id, p.tax_code, current_date) r where v.id = vid;
+  v_net := svc.price;
+  if coalesce(t.inclusive, false) then v_tax := round(v_net - v_net / (1 + coalesce(t.rate, 0)), 2);
+  else v_tax := round(v_net * coalesce(t.rate, 0), 2); v_net := v_net + v_tax; end if;
+  return jsonb_build_object('name', svc.name, 'price', svc.price, 'tax', v_tax, 'total', v_net);
+end $$;
+
 -- Service booking checkout through the POS
 create or replace function public.checkout_booking(p_booking uuid, p_payments jsonb, p_shift uuid default null, p_client_sale_id uuid default null)
 returns jsonb language plpgsql security definer set search_path = public as $$
-declare b bookings; svc booking_services; pid uuid; vid uuid; v_sale sales;
+declare b bookings; svc booking_services; vid uuid; v_sale sales;
 begin
   select * into b from bookings where id = p_booking for update;
   if not found or not has_perm(b.tenant_id, 'book.manage') then raise exception 'Not allowed'; end if;
   if b.kind <> 'service' then raise exception 'Table bookings are paid through their order'; end if;
   if b.status in ('completed','cancelled','no_show') then raise exception 'Booking is %', b.status; end if;
   select * into svc from booking_services where id = b.service_id;
-  vid := svc.variant_id;
-  if vid is null then
-    insert into products (tenant_id, name, kind, on_menu) values (b.tenant_id, svc.name, 'service', false) returning id into pid;
-    insert into product_variants (tenant_id, product_id, sku, price, track_stock)
-    values (b.tenant_id, pid, 'SVC-' || upper(substr(replace(svc.id::text, '-', ''), 1, 8)), svc.price, false) returning id into vid;
-    update booking_services set variant_id = vid where id = svc.id;
-  end if;
+  vid := service_variant(svc.id);
   v_sale := complete_sale(jsonb_build_object('outlet_id', b.outlet_id, 'shift_id', p_shift,
     'client_sale_id', coalesce(p_client_sale_id, gen_random_uuid()), 'customer_id', b.contact_id,
     'lines', jsonb_build_array(jsonb_build_object('variant_id', vid, 'qty', 1, 'unit_price', svc.price)),
@@ -1224,6 +1259,15 @@ create policy shopch_read on public.shop_channels for select using (has_perm(ten
 create policy shopch_write on public.shop_channels for update using (has_perm(tenant_id, 'ord.settings')) with check (has_perm(tenant_id, 'ord.settings'));
 alter table public.shop_links enable row level security;
 create policy shoplinks_read on public.shop_links for select using (has_perm(tenant_id, 'ord.settings'));
+
+create or replace function public.rotate_table_qr(p_table uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare t dining_tables;
+begin
+  select * into t from dining_tables where id = p_table;
+  if not found or not has_perm(t.tenant_id, 'ord.settings') then raise exception 'Not allowed'; end if;
+  update dining_tables set qr_token = encode(sha256(convert_to(gen_random_uuid()::text || clock_timestamp()::text, 'UTF8')), 'hex') where id = t.id;
+end $$;
 
 -- Staff may "86" items and set menu fields without full product rights
 create or replace function public.set_menu_flags(p_product uuid, p_sold_out boolean default null, p_on_menu boolean default null, p_station uuid default null)
