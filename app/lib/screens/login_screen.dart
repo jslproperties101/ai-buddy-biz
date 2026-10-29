@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart' show LaunchMode;
 
 import '../config.dart';
 
@@ -35,6 +36,26 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() => _message = e.message);
     } catch (e) {
       setState(() => _message = 'No connection. Please try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _google() async {
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await Supabase.instance.client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: 'aibuddybiz://login-callback',
+        authScreenLaunchMode: LaunchMode.externalApplication,
+      );
+    } on AuthException catch (e) {
+      setState(() => _message = e.message);
+    } catch (e) {
+      setState(() => _message = 'Google sign-in could not start. Please try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -78,6 +99,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     child: Text(_busy ? 'Please wait…' : (_signUp ? 'Create account' : 'Sign in')),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _google,
+                  icon: const Icon(Icons.account_circle_outlined),
+                  label: const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Text('Continue with Google'),
                   ),
                 ),
                 TextButton(
