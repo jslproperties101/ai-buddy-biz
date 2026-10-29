@@ -6,6 +6,7 @@ import '../services/session.dart';
 import 'catalog_screen.dart';
 import 'crm_screen.dart';
 import 'invoices_screen.dart';
+import 'legal_screen.dart';
 import 'logistics_screen.dart';
 import 'more_screen.dart';
 import 'pos_screen.dart';
@@ -78,6 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (s.has('FIN') && s.can('fin.invoice.view')) ('Invoices', Icons.receipt_long_outlined, const InvoicesScreen()),
       if (s.has('CRM') && (s.can('crm.deal.view') || s.can('crm.contact.view'))) ('CRM', Icons.people_alt_outlined, const CrmScreen()),
       if (s.has('HR') && s.can('hr.employee.view')) ('Team', Icons.badge_outlined, const TeamScreen()),
+      if (s.has('LAW') && s.can('law.view')) ('Legal', Icons.gavel_outlined, const LegalScreen()),
     ];
     final primary = features.take(4).toList();
     final tabs = <(String, IconData, Widget)>[

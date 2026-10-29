@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -515,6 +517,145 @@ class PrintingService {
       ],
     ));
     await Printing.layoutPdf(name: 'Payroll $period', onLayout: (_) async => doc.save());
+  }
+
+  /// Contract PDF. When signed it includes each signature, an audit trail and the document fingerprint.
+  static Future<void> printContract({
+    required Map<String, dynamic> contract,
+    required List<Map<String, dynamic>> signers,
+    required List<Map<String, dynamic>> events,
+    String? verifyUrl,
+  }) async {
+    final s = Session.instance;
+    final dt = DateFormat('d MMM yyyy, HH:mm');
+    String when(dynamic v) {
+      final d = DateTime.tryParse('${v ?? ''}');
+      return d == null ? '' : dt.format(d.toLocal());
+    }
+
+    final small = const pw.TextStyle(fontSize: 8);
+    final bold = pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold);
+    final bodyStyle = const pw.TextStyle(fontSize: 10.5, lineSpacing: 2);
+    final status = contract['status'] as String;
+    final hash = contract['content_hash'] as String?;
+    final draft = status == 'draft' || status == 'in_review';
+    pw.MemoryImage? sig(dynamic dataUrl) {
+      final v = dataUrl as String?;
+      if (v == null || !v.startsWith('data:image/png;base64,')) return null;
+      try {
+        return pw.MemoryImage(base64Decode(v.substring(22)));
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final doc = pw.Document(title: contract['title'] as String, author: s.tenantName);
+    doc.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.fromLTRB(48, 40, 48, 40),
+      header: (ctx) => pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+        pw.Text('${contract['number'] ?? ''} · ${_safe(contract['title'] as String)}', style: small),
+        pw.Text(draft ? 'DRAFT' : status.replaceAll('_', ' ').toUpperCase(), style: small),
+      ]),
+      footer: (ctx) => pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
+        pw.Expanded(child: pw.Text(hash == null ? 'Not yet fingerprinted' : 'SHA-256 $hash', style: const pw.TextStyle(fontSize: 6))),
+        pw.Text('Page ${ctx.pageNumber} of ${ctx.pagesCount}', style: small),
+      ]),
+      build: (_) => [
+        for (final para in (contract['body'] as String).split('\n'))
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 3),
+            child: pw.Text(para.isEmpty ? ' ' : _safe(para), style: bodyStyle),
+          ),
+        pw.SizedBox(height: 20),
+        pw.Text('SIGNATURES', style: bold),
+        pw.SizedBox(height: 8),
+        if (signers.isEmpty) pw.Text('No signers added.', style: small),
+        pw.Wrap(spacing: 20, runSpacing: 16, children: [
+          for (final sg in signers)
+            pw.SizedBox(
+              width: 220,
+              child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+                pw.Container(
+                  height: 60,
+                  width: 220,
+                  alignment: pw.Alignment.bottomLeft,
+                  decoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(width: 0.7))),
+                  child: sig(sg['signature_image']) != null
+                      ? pw.Image(sig(sg['signature_image'])!, height: 56, fit: pw.BoxFit.contain)
+                      : pw.SizedBox(),
+                ),
+                pw.Text(_safe((sg['signed_name'] ?? sg['name']) as String), style: bold),
+                pw.Text(
+                    {'company': 'For ${s.tenantName}', 'counterparty': 'Other party', 'witness': 'Witness'}[sg['role']] ?? 'Signer',
+                    style: small),
+                pw.Text(
+                    sg['status'] == 'signed'
+                        ? 'Signed electronically ${when(sg['signed_at'])}'
+                        : sg['status'] == 'declined'
+                            ? 'Declined'
+                            : 'Date: ________________',
+                    style: small),
+              ]),
+            ),
+        ]),
+        if (!draft && events.isNotEmpty) ...[
+          pw.NewPage(),
+          pw.Text('AUDIT TRAIL', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+          pw.SizedBox(height: 4),
+          pw.Text('${_safe(contract['title'] as String)} (${contract['number']}) · ${s.tenantName}', style: small),
+          if (hash != null) ...[
+            pw.SizedBox(height: 6),
+            pw.Text('Document fingerprint (SHA-256 of title and text):', style: small),
+            pw.Text(hash, style: pw.TextStyle(fontSize: 8, font: pw.Font.courier())),
+            if (verifyUrl != null) pw.Text('Check it at: $verifyUrl', style: small),
+          ],
+          pw.SizedBox(height: 10),
+          pw.TableHelper.fromTextArray(
+            headerStyle: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+            cellStyle: const pw.TextStyle(fontSize: 7.5),
+            columnWidths: {0: const pw.FixedColumnWidth(90), 1: const pw.FixedColumnWidth(80), 3: const pw.FixedColumnWidth(80)},
+            headers: ['When', 'Event', 'Detail', 'IP address'],
+            data: [
+              for (final e in events)
+                [when(e['at']), e['event'], _safe((e['detail'] ?? '') as String), (e['ip'] ?? '') as String],
+            ],
+          ),
+          pw.SizedBox(height: 10),
+          pw.Text('Signer details', style: bold),
+          for (final sg in signers)
+            pw.Text(
+                _safe('${sg['name']} — ${sg['status']}${sg['signed_at'] != null ? ' ${when(sg['signed_at'])}' : ''}'
+                    '${sg['email'] != null ? ' · ${sg['email']}' : ''}${sg['ip'] != null ? ' · IP ${sg['ip']}' : ''}'
+                    '${sg['require_code'] == true ? ' · confirmed with one-time code' : ''}'
+                    '${sg['signed_hash'] != null ? (sg['signed_hash'] == hash ? ' · saw this exact text' : ' · TEXT DIFFERS FROM WHAT WAS SIGNED') : ''}'),
+                style: small),
+          pw.SizedBox(height: 10),
+          pw.Text(
+              'Each signer opened a private link, read the document, ticked a consent box and drew a signature. '
+              'The fingerprint changes if even one character of the text changes.',
+              style: small),
+        ],
+      ],
+    ));
+    await Printing.layoutPdf(name: '${contract['number']} ${contract['title']}', onLayout: (_) async => doc.save());
+  }
+
+  /// The built-in PDF fonts only cover Western characters; swap common symbols and drop the rest.
+  static String _safe(String t) {
+    const map = {'‘': "'", '’': "'", '“': '"', '”': '"', '–': '-', '—': '-', '…': '...', '•': '-', ' ': ' ', '→': '->', '✓': 'v', '✔': 'v'};
+    final b = StringBuffer();
+    for (final r in t.runes) {
+      final ch = String.fromCharCode(r);
+      if (map.containsKey(ch)) {
+        b.write(map[ch]);
+      } else if (r < 0x100) {
+        b.write(ch);
+      } else {
+        b.write('?');
+      }
+    }
+    return b.toString();
   }
 
   static String _addr(dynamic a) {

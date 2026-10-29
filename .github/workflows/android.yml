@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 env:
-  BATCH: f   # bump per batch (d, e, …) so earlier batch links stay available
+  BATCH: g   # bump per batch (d, e, …) so earlier batch links stay available
 
 jobs:
   build:
@@ -68,11 +68,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           TRACK_URL: ${{ vars.TRACK_URL }}
+          SIGN_URL: ${{ vars.SIGN_URL }}
         run: |
           flutter build apk --release \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
-            --dart-define=TRACK_URL="$TRACK_URL"
+            --dart-define=TRACK_URL="$TRACK_URL" \
+            --dart-define=SIGN_URL="$SIGN_URL"
           cp build/app/outputs/flutter-apk/app-release.apk "ai-buddy-biz-batch-$BATCH.apk"
 
       - uses: actions/upload-artifact@v4

@@ -18,6 +18,7 @@ class _ModulesScreenState extends State<ModulesScreen> {
     ('CRM', 'Customers & leads', 'Pipeline, loyalty, campaigns', Icons.people_alt_outlined),
     ('LOG', 'Shipping & cargo', 'Shipments, air waybills, containers, vessels, customs', Icons.local_shipping_outlined),
     ('HR', 'HR & payroll', 'Staff, attendance, leave, claims, payroll with EPF/SOCSO/EIS/PCB', Icons.badge_outlined),
+    ('LAW', 'Legal & compliance', 'Contracts, e-signatures, compliance calendar, AI legal assistant', Icons.gavel_outlined),
   ];
   bool _changed = false;
   bool _busy = false;

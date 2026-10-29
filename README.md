@@ -16,7 +16,7 @@ All-in-one business super app: POS, inventory, invoicing, accounting, tax, CRM, 
 | D | CRM & leads: pipeline, scoring, tasks, loyalty, campaigns, web lead form | Built |
 | E | Shipping, cargo, air waybills, containers, vessels, customs landed cost, supplier CRM, purchasing | Built |
 | F | HR & payroll: staff, attendance, EA overtime, leave, claims, EPF/SOCSO/EIS/PCB, payslips | Built |
-| G | Legal and AI lawyer | |
+| G | Legal & compliance: contracts, templates, e-signing, compliance calendar, AI legal assistant | Built |
 | H | Kids care monitor | |
 | I | Restaurant, e-commerce sync, bookings, delivery, customer app | |
 | J | AI agents across modules | |
@@ -26,7 +26,7 @@ All-in-one business super app: POS, inventory, invoicing, accounting, tax, CRM, 
 
 Flutter app. The APK is built by GitHub Actions (`.github/workflows/android.yml`) on every push to `main` and published to a release per batch:
 
-`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-f/ai-buddy-biz-batch-f.apk`
+`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-g/ai-buddy-biz-batch-g.apk`
 
 Set repo secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` first, and apply `supabase/migrations/*.sql` in order.
 
@@ -73,3 +73,26 @@ Campaigns and "send from business" messages are queued in `outbound_messages` an
 - PCB follows LHDN's computerised formula incl. additional remuneration (bonus) and zakat. Check results against e-PCB before the first live run.
 - Overtime follows the Employment Act: ORP = monthly ÷ 26; 1.5× normal days; rest-day ½/1 day + 2×; public holiday 2 days + 3×.
 - Staff link their login automatically when HR enters the same email on their employee record.
+
+## Legal & compliance (Batch G)
+
+- Turn on **Legal & compliance** in More → Modules. Fill in More → Legal → 🏢 Company details (used by templates).
+- Five Malaysian starter templates (mutual NDA, employment contract to EA 1955 minimums, service agreement, sales terms, PDPA privacy notice).
+  They are starting points, not legal advice — have a lawyer review them for your business.
+- **E-signing** (Electronic Commerce Act 2006 s.62 style: identifies the signer, shows approval, reliable):
+  1. Host `web/sign.html` (any static host: GitHub Pages, Netlify, Supabase Storage). Put your project URL and anon key in it.
+  2. Set the repo **variable** `SIGN_URL` to its address (e.g. `https://sign.example.com/sign.html`) so the app builds links.
+  3. Sending locks the wording, stores a SHA-256 fingerprint, saves a version and issues a secret link per signer.
+     Signers type their name, draw a signature, tick consent and (optionally) enter a one-time code. Every step is logged with time and IP.
+  4. Anyone can check a signed PDF at `SIGN_URL?verify=<fingerprint>`.
+  - Powers of attorney, wills, trusts and negotiable instruments can't be e-signed (the Act excludes them) — such templates are print-only.
+- **Compliance calendar** seeds EPF/SOCSO/EIS/PCB (15th), SST returns, CP204, EA forms, Form E, Form C, SSM annual return/accounts,
+  premise licence and a yearly PDPA review. Items with no date ask you for one. Done items roll to the next period.
+- **AI legal assistant** (`supabase/functions/ai-legal`): contract review, key-date extraction, drafting and Q&A, focused on Malaysian law.
+  ```
+  supabase secrets set ANTHROPIC_API_KEY=sk-ant-...      # required
+  supabase secrets set AI_MODEL=claude-sonnet-5-5         # optional (default)
+  supabase functions deploy ai-legal
+  ```
+  Monthly AI requests per plan are in `ai_plan_limits`; usage and cost are logged in `ai_usage`.
+  The assistant gives general information, not legal advice, and flags when to see a lawyer.
