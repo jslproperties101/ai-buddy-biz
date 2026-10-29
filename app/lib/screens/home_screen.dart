@@ -6,9 +6,11 @@ import '../services/session.dart';
 import 'catalog_screen.dart';
 import 'crm_screen.dart';
 import 'invoices_screen.dart';
+import 'kids_screen.dart';
 import 'legal_screen.dart';
 import 'logistics_screen.dart';
 import 'more_screen.dart';
+import 'parent_screen.dart';
 import 'pos_screen.dart';
 import 'team_screen.dart';
 
@@ -72,6 +74,8 @@ class _HomeScreenState extends State<HomeScreen> {
     // Each business sees only the modules it switched on and its role allows.
     // Four fit in the bottom bar; any extra appear at the top of More.
     final features = <(String, IconData, Widget)>[
+      if (s.has('KIDS') && s.can('kids.parent')) ('My children', Icons.family_restroom, const ParentScreen()),
+      if (s.has('KIDS') && s.can('kids.view')) ('Kids', Icons.child_care, const KidsScreen()),
       if (s.has('LOG') && s.can('log.shipment.view')) ('Shipping', Icons.local_shipping_outlined, const LogisticsScreen()),
       if (s.has('POS') && s.can('pos.sale.create')) ('Sell', Icons.point_of_sale, PosScreen(onSaleDone: _refreshPending)),
       if (s.has('INV') && s.can('inv.product.view'))

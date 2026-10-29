@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/crm.dart';
 import '../services/session.dart';
 import 'crm_settings_screen.dart';
 import 'modules_screen.dart';
@@ -9,6 +10,7 @@ import 'sales_history_screen.dart';
 import 'shift_screen.dart';
 import 'suppliers_screen.dart';
 import 'tax_settings_screen.dart';
+import 'team_access_screen.dart';
 
 class MoreScreen extends StatefulWidget {
   final VoidCallback onOutletChanged;
@@ -46,6 +48,30 @@ class _MoreScreenState extends State<MoreScreen> {
       widget.onOutletChanged();
       setState(() {});
     }
+  }
+
+  Future<void> _pickBusiness() async {
+    final s = Session.instance;
+    final id = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: ListView(shrinkWrap: true, children: [
+          for (final b in s.businesses)
+            ListTile(
+              title: Text(b.$2),
+              subtitle: Text(b.$3),
+              trailing: b.$1 == s.tenantId ? const Icon(Icons.check) : null,
+              onTap: () => Navigator.pop(context, b.$1),
+            ),
+        ]),
+      ),
+    );
+    if (id == null || id == s.tenantId) return;
+    await s.switchBusiness(id);
+    await Crm.instance.load();
+    widget.onOutletChanged();
+    widget.onModulesChanged?.call();
+    if (mounted) setState(() {});
   }
 
   @override
@@ -102,12 +128,20 @@ class _MoreScreenState extends State<MoreScreen> {
           subtitle: const Text('Loyalty points, website form, WhatsApp & email'),
           onTap: () => _go(const CrmSettingsScreen()),
         ),
-      ListTile(
-        leading: const Icon(Icons.percent),
-        title: const Text('Tax'),
-        subtitle: Text('Rates for ${s.outlet?.name ?? 'this outlet'}'),
-        onTap: () => _go(const TaxSettingsScreen()),
-      ),
+      if (s.can('fin.tax.manage') || s.can('pos.sale.create') || s.can('fin.invoice.view'))
+        ListTile(
+          leading: const Icon(Icons.percent),
+          title: const Text('Tax'),
+          subtitle: Text('Rates for ${s.outlet?.name ?? 'this outlet'}'),
+          onTap: () => _go(const TaxSettingsScreen()),
+        ),
+      if (s.can('core.user.manage'))
+        ListTile(
+          leading: const Icon(Icons.manage_accounts_outlined),
+          title: const Text('Team & access'),
+          subtitle: const Text('Invite staff by email, roles, remove access'),
+          onTap: () => _go(const TeamAccessScreen()),
+        ),
       if (s.can('core.module.manage'))
         ListTile(
           leading: const Icon(Icons.widgets_outlined),
@@ -120,12 +154,20 @@ class _MoreScreenState extends State<MoreScreen> {
           },
         ),
       const Divider(),
-      ListTile(
-        leading: const Icon(Icons.store_outlined),
-        title: const Text('Switch outlet'),
-        subtitle: Text(s.outlet?.name ?? '—'),
-        onTap: _pickOutlet,
-      ),
+      if (s.businesses.length > 1)
+        ListTile(
+          leading: const Icon(Icons.swap_horiz),
+          title: const Text('Switch business'),
+          subtitle: Text(s.tenantName),
+          onTap: _pickBusiness,
+        ),
+      if (!s.parentOnly && s.outlets.length > 1)
+        ListTile(
+          leading: const Icon(Icons.store_outlined),
+          title: const Text('Switch outlet'),
+          subtitle: Text(s.outlet?.name ?? '—'),
+          onTap: _pickOutlet,
+        ),
       ListTile(
         leading: const Icon(Icons.logout),
         title: const Text('Sign out'),

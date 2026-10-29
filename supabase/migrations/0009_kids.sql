@@ -776,6 +776,15 @@ begin
   return gid;
 end $$;
 
+create or replace function public.stop_medicine(p_auth uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare m kids_med_authorisations;
+begin
+  select * into m from kids_med_authorisations where id = p_auth;
+  if not found or (my_guardian_id(m.child_id) is null and not has_perm(m.tenant_id, 'kids.manage')) then raise exception 'Not allowed'; end if;
+  update kids_med_authorisations set status = 'stopped' where id = m.id;
+end $$;
+
 -- ===== Incidents =====
 create or replace function public.report_incident(p_child uuid, p_occurred timestamptz, p_kind text, p_severity text, p_description text,
                                                   p_location text default null, p_first_aid text default null, p_action text default null,
@@ -1079,8 +1088,6 @@ create policy kl_delete on public.kids_logs for delete using (has_perm(tenant_id
 
 alter table public.kids_med_authorisations enable row level security;
 create policy kma_read on public.kids_med_authorisations for select using (has_perm(tenant_id, 'kids.view') or is_guardian_of(child_id));
-create policy kma_stop on public.kids_med_authorisations for update using (has_perm(tenant_id, 'kids.manage') or is_guardian_of(child_id))
-  with check (has_perm(tenant_id, 'kids.manage') or is_guardian_of(child_id));
 
 alter table public.kids_med_given enable row level security;
 create policy kmg_read on public.kids_med_given for select using (has_perm(tenant_id, 'kids.view') or is_guardian_of(child_id));

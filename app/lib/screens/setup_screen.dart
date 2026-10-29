@@ -53,6 +53,17 @@ class _SetupScreenState extends State<SetupScreen> {
         actions: [IconButton(onPressed: Session.instance.signOut, icon: const Icon(Icons.logout))],
       ),
       body: ListView(padding: const EdgeInsets.all(16), children: [
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.mail_outline),
+            title: const Text('Invited by a business or your child\'s centre?'),
+            subtitle: Text('Ask them to invite ${Session.instance.db.auth.currentUser?.email ?? 'your email'}, '
+                'confirm your email, then tap here.'),
+            trailing: const Icon(Icons.refresh),
+            onTap: widget.onDone,
+          ),
+        ),
+        const SizedBox(height: 12),
         TextField(
           controller: _name,
           decoration: const InputDecoration(labelText: 'Business name', border: OutlineInputBorder()),

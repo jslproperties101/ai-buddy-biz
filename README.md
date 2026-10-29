@@ -17,7 +17,7 @@ All-in-one business super app: POS, inventory, invoicing, accounting, tax, CRM, 
 | E | Shipping, cargo, air waybills, containers, vessels, customs landed cost, supplier CRM, purchasing | Built |
 | F | HR & payroll: staff, attendance, EA overtime, leave, claims, EPF/SOCSO/EIS/PCB, payslips | Built |
 | G | Legal & compliance: contracts, templates, e-signing, compliance calendar, AI legal assistant | Built |
-| H | Kids care monitor | |
+| H | Kids care: rooms & ratios, safe check-in/out, daily logs & photos, medicine, incidents, parent app, fees; team invitations | Built |
 | I | Restaurant, e-commerce sync, bookings, delivery, customer app | |
 | J | AI agents across modules | |
 | K | Business plan and valuation roadmap | |
@@ -26,7 +26,7 @@ All-in-one business super app: POS, inventory, invoicing, accounting, tax, CRM, 
 
 Flutter app. The APK is built by GitHub Actions (`.github/workflows/android.yml`) on every push to `main` and published to a release per batch:
 
-`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-g/ai-buddy-biz-batch-g.apk`
+`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-h/ai-buddy-biz-batch-h.apk`
 
 Set repo secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` first, and apply `supabase/migrations/*.sql` in order.
 
@@ -96,3 +96,28 @@ Campaigns and "send from business" messages are queued in `outbound_messages` an
   ```
   Monthly AI requests per plan are in `ai_plan_limits`; usage and cost are logged in `ai_usage`.
   The assistant gives general information, not legal advice, and flags when to see a lawyer.
+
+## Team access (Batch H, all modules)
+
+- More → **Team & access**: invite people by email with a role; change roles or remove access. At least one owner always stays.
+- People sign up in the app with the invited email, confirm it, and get access on their next sign-in (`claim_invites()`).
+  Make sure **email confirmation is on** in Supabase Auth (it is by default) — unconfirmed emails are never linked.
+- Someone in several businesses (e.g. a parent at two centres, or staff at two companies) gets More → **Switch business**.
+
+## Kids care (Batch H)
+
+- Turn on **Kids care** in More → Modules (on by default for the "Kids care centre" template).
+- Kids → Setup: centre type & hours, late pick-up fee, rooms with carer ratios, fee plans.
+  Default ratios by age: under 1 yr 1:3, 1–3 yrs 1:5, 3–4 yrs 1:10 (TASKA), 4 yrs 1:10, 5–6 yrs 1:15 (TADIKA). Check them against your licence.
+- **Safe pick-up**: a child is only released to a guardian marked "can collect", a person the parent authorised for that day
+  (last 4 of IC checked), or the parent's 6-digit PIN (5 wrong tries locks it for the day). Anyone else needs a manager override
+  with a reason, and every guardian is alerted.
+- **Parents** are guardians with an email: "Invite to the parent app" sends them an email; they see check-in/out, daily updates
+  and photos, chat with the centre, authorise medicine, acknowledge incidents, add a one-off pick-up person, set a PIN,
+  report absences and see their fee invoices.
+- **Photos** go to a private Storage bucket `kids` (created by `0009_kids.sql` together with its access rules). Photos need parent consent.
+- **Medicine** is only given against a parent's authorisation (in the app or a signed paper form), with interval and daily-maximum checks.
+- **Safeguarding** concerns are private to managers and never sent to parents.
+- **Fees**: Kids → Setup → Monthly fees creates one invoice per paying guardian (sibling discount, first-time registration and deposit,
+  late pick-up fees, extra charges) in Invoices. Run it once a month; families already invoiced are skipped.
+- Needs the `send-messages` function (Batch D) for check-in, pick-up, incident and invitation messages.

@@ -641,6 +641,111 @@ class PrintingService {
     await Printing.layoutPdf(name: '${contract['number']} ${contract['title']}', onLayout: (_) async => doc.save());
   }
 
+  /// Daily attendance register: in/out times, who dropped off and collected, how pick-up was verified.
+  static Future<void> printKidsRegister({
+    required DateTime day,
+    required List<Map<String, dynamic>> children,
+    required Map<String, Map<String, dynamic>> attendance,
+    required String Function(dynamic roomId) roomName,
+  }) async {
+    final s = Session.instance;
+    String t(dynamic v) {
+      final d = DateTime.tryParse('${v ?? ''}');
+      return d == null ? '' : DateFormat('HH:mm').format(d.toLocal());
+    }
+
+    final rows = [
+      for (final c in children)
+        () {
+          final a = attendance[c['id']];
+          return [
+            _safe(c['full_name'] as String),
+            _safe(roomName(c['room_id'])),
+            a == null ? '' : t(a['check_in_at']),
+            _safe((a?['dropped_by'] ?? '') as String),
+            a?['temperature']?.toString() ?? '',
+            a == null ? '' : t(a['check_out_at']),
+            _safe((a?['picked_up_by'] ?? '') as String),
+            (a?['pickup_method'] ?? (a == null ? 'not in' : a['check_in_at'] == null ? a['status'] : '')) as String,
+          ];
+        }()
+    ];
+    final present = attendance.values.where((a) => a['check_in_at'] != null).length;
+    final doc = pw.Document();
+    doc.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4.landscape,
+      margin: const pw.EdgeInsets.all(24),
+      build: (_) => [
+        pw.Text('${_safe(s.tenantName)} - attendance register ${DateFormat('EEEE d MMMM yyyy').format(day)}',
+            style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold)),
+        pw.Text('Printed ${DateFormat('d MMM yyyy HH:mm').format(DateTime.now())} · $present attended', style: const pw.TextStyle(fontSize: 8)),
+        pw.SizedBox(height: 8),
+        pw.TableHelper.fromTextArray(
+          headerStyle: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold),
+          cellStyle: const pw.TextStyle(fontSize: 8),
+          headers: ['Child', 'Room', 'In', 'Dropped off by', 'Temp', 'Out', 'Collected by', 'Verified by'],
+          data: rows,
+        ),
+        pw.SizedBox(height: 16),
+        pw.Text('Checked by: ______________________    Signature: ______________________', style: const pw.TextStyle(fontSize: 9)),
+      ],
+    ));
+    await Printing.layoutPdf(name: 'Register ${DateFormat('yyyy-MM-dd').format(day)}', onLayout: (_) async => doc.save());
+  }
+
+  /// Incident / accident report with parent signature lines.
+  static Future<void> printIncident({required Map<String, dynamic> incident, required String childName}) async {
+    final s = Session.instance;
+    final i = incident;
+    final dt = DateFormat('d MMM yyyy, HH:mm');
+    String w(dynamic v) {
+      final d = DateTime.tryParse('${v ?? ''}');
+      return d == null ? '' : dt.format(d.toLocal());
+    }
+
+    final bold = pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold);
+    const body = pw.TextStyle(fontSize: 10);
+    pw.Widget field(String label, dynamic v) => v == null || '$v'.trim().isEmpty
+        ? pw.SizedBox()
+        : pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 8),
+            child: pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+              pw.Text(label, style: bold),
+              pw.Text(_safe('$v'), style: body),
+            ]),
+          );
+    final doc = pw.Document();
+    doc.addPage(pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(40),
+      build: (_) => [
+        pw.Text(_safe(s.tenantName), style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
+        pw.Text(i['kind'] == 'safeguarding' ? 'CONFIDENTIAL - SAFEGUARDING RECORD' : 'INCIDENT / ACCIDENT REPORT',
+            style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
+        pw.SizedBox(height: 10),
+        field('Child', childName),
+        field('Date and time', w(i['occurred_at'])),
+        field('Type / severity', '${i['kind']} / ${i['severity']}'),
+        field('Where', i['location']),
+        field('What happened', i['description']),
+        field('First aid given', i['first_aid']),
+        field('Other action taken', i['action_taken']),
+        field('Witnesses', i['witnesses']),
+        field('Reported by', i['reported_by_name']),
+        field('Parent notified', w(i['parent_notified_at'])),
+        field('Parent acknowledged in app', w(i['guardian_ack_at'])),
+        field('Parent comment', i['guardian_ack_note']),
+        field('Follow-up', i['closed_note']),
+        pw.SizedBox(height: 24),
+        pw.Text('Staff signature: ______________________   Date: ____________', style: body),
+        pw.SizedBox(height: 16),
+        if (i['kind'] != 'safeguarding')
+          pw.Text('Parent/guardian signature: ______________________   Date: ____________', style: body),
+      ],
+    ));
+    await Printing.layoutPdf(name: 'Incident $childName', onLayout: (_) async => doc.save());
+  }
+
   /// The built-in PDF fonts only cover Western characters; swap common symbols and drop the rest.
   static String _safe(String t) {
     const map = {'‘': "'", '’': "'", '“': '"', '”': '"', '–': '-', '—': '-', '…': '...', '•': '-', ' ': ' ', '→': '->', '✓': 'v', '✔': 'v'};

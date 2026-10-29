@@ -41,6 +41,9 @@ class Session {
   List<Outlet> outlets = [];
   Outlet? outlet;
 
+  /// Every business this login belongs to (id, name, role), for switching.
+  List<(String, String, String)> businesses = [];
+
   /// Tax rates for the current outlet, by tax code. Cached on the phone for offline selling.
   Map<String, TaxRate> taxTable = {};
 
@@ -57,12 +60,19 @@ class Session {
   Future<bool> load() async {
     final uid = db.auth.currentUser!.id;
     final prefs = await SharedPreferences.getInstance();
+    // Turn any invitations for this (verified) email into access: staff, or parents of a childcare centre
+    try {
+      await db.rpc('claim_invites');
+    } catch (_) {}
     final rows = await db
         .from('memberships')
         .select('tenant_id, role_id, roles(name), tenants(name, base_currency, country_code, default_tax_code)')
         .eq('user_id', uid)
         .eq('active', true);
     if (rows.isEmpty) return false;
+    businesses = [
+      for (final r in rows) (r['tenant_id'] as String, (r['tenants']?['name'] ?? '') as String, (r['roles']?['name'] ?? '') as String)
+    ];
 
     final saved = prefs.getString('tenant_id');
     final m = rows.firstWhere((r) => r['tenant_id'] == saved, orElse: () => rows.first);
@@ -180,6 +190,16 @@ class Session {
     } catch (_) {
       openShiftId = prefs.getString(key);
     }
+  }
+
+  /// A parent who only has the parent app here (no staff rights)
+  bool get parentOnly => can('kids.parent') && !can('kids.view');
+
+  Future<void> switchBusiness(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('tenant_id', id);
+    await prefs.remove('outlet_id');
+    await load();
   }
 
   Future<void> signOut() async {

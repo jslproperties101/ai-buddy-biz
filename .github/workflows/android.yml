@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 env:
-  BATCH: g   # bump per batch (d, e, …) so earlier batch links stay available
+  BATCH: h   # bump per batch (d, e, …) so earlier batch links stay available
 
 jobs:
   build:
