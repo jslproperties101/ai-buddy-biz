@@ -38,6 +38,7 @@
 </form>
 <script>
   const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
+  const SUPABASE_SCHEMA = "biz"; // Ai buddy Biz lives in schema "biz" of the EAB-QA-Test project ("public" for a stand-alone Biz project)
   const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
   const FORM_KEY = "YOUR-FORM-KEY";
 
@@ -52,7 +53,7 @@
     try {
       const r = await fetch(SUPABASE_URL + "/rest/v1/rpc/capture_lead", {
         method: "POST",
-        headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY },
+        headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY, "Content-Profile": SUPABASE_SCHEMA, "Accept-Profile": SUPABASE_SCHEMA },
         body: JSON.stringify({ p_form_key: FORM_KEY, p: d }),
       });
       if (!r.ok) throw new Error((await r.json()).message || r.statusText);

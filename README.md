@@ -20,15 +20,18 @@ All-in-one business super app: POS, inventory, invoicing, accounting, tax, CRM, 
 | H | Kids care: rooms & ratios, safe check-in/out, daily logs & photos, medicine, incidents, parent app, fees; team invitations | Built |
 | I | Restaurant & orders (tables, kitchen display, QR/online ordering), delivery, bookings, Shopify/WooCommerce sync, customer web app | Built |
 | J | AI assistant & agents: ask about your business, daily briefing, approved actions (reorders, reminders, follow-ups, prices) | Built |
+| J2 | Batch 2b: move the database into EAB-QA-Test, schema `biz` (same features as J) | Built, not phone-tested |
 | K | Business plan and valuation roadmap | |
 
 ## Android app (`app/`)
 
 Flutter app. The APK is built by GitHub Actions (`.github/workflows/android.yml`) on every push to `main` and published to a release per batch:
 
-`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-j/ai-buddy-biz-batch-j.apk`
+`https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-j2/ai-buddy-biz-batch-j2.apk`
 
-Set repo secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` first, and apply `supabase/migrations/*.sql` in order.
+Since Batch 2b (9 Nov 2026) the database is the **EAB-QA-Test** project, schema `biz` — see `supabase/eab-qa-test/README.md`.
+Set repo secrets `SUPABASE_URL` and `SUPABASE_ANON_KEY` to that project. (A stand-alone Biz project still works: apply
+`supabase/migrations/*.sql` in order and build with `SUPABASE_SCHEMA=public`.)
 
 ## Messaging (Batch D)
 

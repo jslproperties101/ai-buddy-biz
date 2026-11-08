@@ -10,6 +10,9 @@
 // Secrets: ANTHROPIC_API_KEY (required), AI_MODEL (optional, default claude-sonnet-5-5).
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+// Ai buddy Biz tables live in schema "biz" of the EAB-QA-Test project (Batch 2b). Set the function secret
+// BIZ_DB_SCHEMA=public for a stand-alone Biz project.
+const DB_SCHEMA = Deno.env.get("BIZ_DB_SCHEMA") ?? "biz";
 
 const PRICES: Record<string, [number, number]> = {
   "claude-opus-5-5": [4, 20],
@@ -66,7 +69,7 @@ Deno.serve(async (req) => {
 
   // Scheduled run with the service key: briefings for every business that is due
   if (auth === `Bearer ${serviceKey}`) {
-    const db = createClient(url, serviceKey, { auth: { persistSession: false } });
+    const db = createClient(url, serviceKey, { db: { schema: DB_SCHEMA }, auth: { persistSession: false } });
     const { data: due, error } = await db.rpc("ai_briefings_due");
     if (error) return json({ error: error.message }, 500);
     const out: unknown[] = [];
@@ -79,7 +82,7 @@ Deno.serve(async (req) => {
 
   if (!auth.startsWith("Bearer ")) return json({ error: "Sign in first" }, 401);
   if (!body.tenant_id) return json({ error: "tenant_id is required" }, 400);
-  const db = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
+  const db = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { db: { schema: DB_SCHEMA }, global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
   try {
     if (body.mode === "briefing") return json(await briefing(db, body.tenant_id, apiKey, model));
     if (!body.message?.trim()) return json({ error: "Ask a question" }, 400);

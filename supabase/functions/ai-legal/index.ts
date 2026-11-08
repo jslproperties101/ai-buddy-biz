@@ -9,6 +9,9 @@
 // The model gives general guidance, not legal advice; the app shows that clearly.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+// Ai buddy Biz tables live in schema "biz" of the EAB-QA-Test project (Batch 2b). Set the function secret
+// BIZ_DB_SCHEMA=public for a stand-alone Biz project.
+const DB_SCHEMA = Deno.env.get("BIZ_DB_SCHEMA") ?? "biz";
 
 const PRICES: Record<string, [number, number]> = {
   // USD per million tokens [input, output]
@@ -60,6 +63,7 @@ Deno.serve(async (req) => {
   const auth = req.headers.get("Authorization") ?? "";
   if (!auth.startsWith("Bearer ")) return json({ error: "Sign in first" }, 401);
   const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+    db: { schema: DB_SCHEMA },
     global: { headers: { Authorization: auth } },
     auth: { persistSession: false },
   });

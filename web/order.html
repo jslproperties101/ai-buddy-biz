@@ -29,6 +29,7 @@
 <main id="app"><p>Loading…</p></main>
 <script>
   const SUPABASE_URL = "https://YOUR-PROJECT.supabase.co";
+  const SUPABASE_SCHEMA = "biz"; // Ai buddy Biz lives in schema "biz" of the EAB-QA-Test project ("public" for a stand-alone Biz project)
   const SUPABASE_ANON_KEY = "YOUR-ANON-KEY";
   const token = new URLSearchParams(location.search).get("o") || "";
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
@@ -39,7 +40,7 @@
     let o;
     try {
       const r = await fetch(SUPABASE_URL + "/rest/v1/rpc/public_order", {
-        method: "POST", headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY },
+        method: "POST", headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: "Bearer " + SUPABASE_ANON_KEY, "Content-Profile": SUPABASE_SCHEMA, "Accept-Profile": SUPABASE_SCHEMA },
         body: JSON.stringify({ p_token: token }),
       });
       o = await r.json();

@@ -13,6 +13,9 @@
 //   woocommerce: {"base_url":"https://shop.example.com","consumer_key":"ck_…","consumer_secret":"cs_…"}
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+// Ai buddy Biz tables live in schema "biz" of the EAB-QA-Test project (Batch 2b). Set the function secret
+// BIZ_DB_SCHEMA=public for a stand-alone Biz project.
+const DB_SCHEMA = Deno.env.get("BIZ_DB_SCHEMA") ?? "biz";
 
 type Channel = { tenant_id: string; provider: "shopify" | "woocommerce"; outlet_id: string; enabled: boolean; import_orders: boolean;
   push_stock: boolean; last_order_at: string | null; last_map_at: string | null };
@@ -36,7 +39,7 @@ Deno.serve(async (req) => {
   const url = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const auth = req.headers.get("Authorization") ?? "";
-  const db = createClient(url, serviceKey, { auth: { persistSession: false } });
+  const db = createClient(url, serviceKey, { db: { schema: DB_SCHEMA }, auth: { persistSession: false } });
   let body: { tenant_id?: string; remap?: boolean } = {};
   try { body = await req.json(); } catch { /* cron calls without a body */ }
 
@@ -44,7 +47,7 @@ Deno.serve(async (req) => {
   let onlyTenant: string | null = null;
   if (auth !== `Bearer ${serviceKey}`) {
     if (!auth.startsWith("Bearer ") || !body.tenant_id) return json({ error: "Unauthorized" }, 401);
-    const asUser = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
+    const asUser = createClient(url, Deno.env.get("SUPABASE_ANON_KEY")!, { db: { schema: DB_SCHEMA }, global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
     const { data: allowed } = await asUser.rpc("has_perm", { t: body.tenant_id, perm: "ord.settings" });
     if (allowed !== true) return json({ error: "Not allowed" }, 403);
     onlyTenant = body.tenant_id;

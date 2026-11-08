@@ -15,6 +15,9 @@
 //   curl -X POST https://<project>.supabase.co/functions/v1/send-messages -H "Authorization: Bearer <SERVICE_ROLE_KEY>"
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+// Ai buddy Biz tables live in schema "biz" of the EAB-QA-Test project (Batch 2b). Set the function secret
+// BIZ_DB_SCHEMA=public for a stand-alone Biz project.
+const DB_SCHEMA = Deno.env.get("BIZ_DB_SCHEMA") ?? "biz";
 
 type Msg = {
   id: string;
@@ -41,7 +44,7 @@ Deno.serve(async (req) => {
   const auth = req.headers.get("Authorization") ?? "";
   if (auth !== `Bearer ${serviceKey}`) return new Response("Unauthorized", { status: 401 });
 
-  const db = createClient(url, serviceKey, { auth: { persistSession: false } });
+  const db = createClient(url, serviceKey, { db: { schema: DB_SCHEMA }, auth: { persistSession: false } });
 
   // Claim a batch so two overlapping runs don't send the same message twice
   const { data: queued, error } = await db

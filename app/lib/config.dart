@@ -2,6 +2,9 @@
 class AppConfig {
   static const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
   static const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+  /// Database area the app reads and writes. Since Batch 2b (9 Nov 2026) Ai buddy Biz lives in the EAB-QA-Test
+  /// project in its own schema "biz". Build with --dart-define=SUPABASE_SCHEMA=public for a stand-alone Biz project.
+  static const supabaseSchema = String.fromEnvironment('SUPABASE_SCHEMA', defaultValue: 'biz');
   static const appName = 'Ai buddy Biz';
   /// Public page that shows shipment tracking (web/track.html hosted anywhere). Optional.
   static const trackingUrl = String.fromEnvironment('TRACK_URL');

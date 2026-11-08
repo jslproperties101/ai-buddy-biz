@@ -11,7 +11,12 @@ import 'services/session.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   if (AppConfig.isConfigured) {
-    await Supabase.initialize(url: AppConfig.supabaseUrl, anonKey: AppConfig.supabaseAnonKey);
+    await Supabase.initialize(
+      url: AppConfig.supabaseUrl,
+      anonKey: AppConfig.supabaseAnonKey,
+      // every .from() and .rpc() goes to the biz schema (sends Accept-Profile / Content-Profile: biz)
+      postgrestOptions: PostgrestClientOptions(schema: AppConfig.supabaseSchema),
+    );
   }
   runApp(const AiBuddyBizApp());
 }

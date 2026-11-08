@@ -4,19 +4,22 @@ name: Android APK
 # per-batch GitHub Release, so each batch has its own download link:
 #   https://github.com/jslproperties101/ai-buddy-biz/releases/download/batch-<x>/ai-buddy-biz-batch-<x>.apk
 #
-# Repo secrets needed (Settings → Secrets and variables → Actions):
-#   SUPABASE_URL, SUPABASE_ANON_KEY
+# Database (Settings → Secrets and variables → Actions):
+#   Since Batch 2b (9 Nov 2026) Ai buddy Biz uses the EAB-QA-Test project, schema "biz".
+#   Repo VARIABLES SUPABASE_URL and SUPABASE_ANON_KEY (the publishable key, which is public by design and inside every
+#   APK anyway) win over the older repo SECRETS of the same names, which still point to the paused Biz project.
+#   Optional variable SUPABASE_SCHEMA (default biz; "public" for a stand-alone Biz project).
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feature/**']
   workflow_dispatch:
 
 permissions:
   contents: write
 
 env:
-  BATCH: j   # bump per batch (d, e, …) so earlier batch links stay available
+  BATCH: j2  # bump per batch (d, e, …) so earlier batch links stay available
 
 jobs:
   build:
@@ -26,6 +29,10 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@v4
+
+      - name: EAB-QA-Test biz schema file matches the migrations
+        working-directory: .
+        run: node supabase/eab-qa-test/make.mjs --check
 
       - uses: actions/setup-java@v4
         with:
@@ -69,15 +76,26 @@ jobs:
 
       - name: Build APK
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SCHEMA: ${{ vars.SUPABASE_SCHEMA || 'biz' }}
           TRACK_URL: ${{ vars.TRACK_URL }}
           SIGN_URL: ${{ vars.SIGN_URL }}
         run: |
           set -o pipefail
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then echo "SUPABASE_URL / SUPABASE_ANON_KEY not set"; exit 1; fi
+          echo "Database: $SUPABASE_URL schema $SUPABASE_SCHEMA"
+          # The stand-alone Biz project (akabqdzqmqfevlmazyqo) was paused 7 Nov 2026 (D-7N-1/2). An APK built for it cannot
+          # work, so it is built (to prove the code compiles) but not published.
+          case "$SUPABASE_URL" in
+            *akabqdzqmqfevlmazyqo*) echo "PUBLISH=no" >> "$GITHUB_ENV"
+              echo "::warning::SUPABASE_URL / SUPABASE_ANON_KEY still point to the paused Biz project. Set them to EAB-QA-Test and run again." ;;
+            *) echo "PUBLISH=yes" >> "$GITHUB_ENV" ;;
+          esac
           flutter build apk --release \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+            --dart-define=SUPABASE_SCHEMA="$SUPABASE_SCHEMA" \
             --dart-define=TRACK_URL="$TRACK_URL" \
             --dart-define=SIGN_URL="$SIGN_URL" 2>&1 | tee "$RUNNER_TEMP/build.log"
           cp build/app/outputs/flutter-apk/app-release.apk "ai-buddy-biz-batch-$BATCH.apk"
@@ -101,6 +119,7 @@ jobs:
           path: app/ai-buddy-biz-batch-${{ env.BATCH }}.apk
 
       - name: Publish to batch release
+        if: env.PUBLISH == 'yes'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: batch-${{ env.BATCH }}
