@@ -113,7 +113,7 @@ test("classify: incoming text message is accepted with fields mapped", () => {
     assert.deepEqual(c.message, {
       accountId: 1, conversationId: 55, messageId: 101,
       content: "Hi, is the Mont Kiara condo still available?",
-      channel: "Channel::Whatsapp", contactId: 9, contactName: "Aisha", contactPhone: "+60123456789", conversationStatus: "pending",
+      channel: "Channel::Whatsapp", contactId: 9, contactName: "Aisha", contactPhone: "+60123456789", contactEmail: null, conversationStatus: "pending",
     });
   }
 });

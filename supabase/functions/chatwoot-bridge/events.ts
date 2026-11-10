@@ -10,6 +10,7 @@ export type IncomingMessage = {
   contactId: number | null;
   contactName: string | null;
   contactPhone: string | null;
+  contactEmail: string | null;
   conversationStatus: string | null;
 };
 
@@ -55,6 +56,7 @@ export function classifyEvent(payload: Json): Classification {
       contactId: asInt(sender.id),
       contactName: typeof sender.name === "string" ? sender.name : null,
       contactPhone: typeof sender.phone_number === "string" ? sender.phone_number : null,
+      contactEmail: typeof sender.email === "string" ? sender.email : null,
       conversationStatus: typeof payload.conversation?.status === "string" ? payload.conversation.status : null,
     },
   };

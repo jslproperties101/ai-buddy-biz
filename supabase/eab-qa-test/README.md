@@ -8,6 +8,7 @@ schema `biz`, beside Estate Agent AI Buddy's tables in `public`. Its demo data w
 |---|---|
 | `make.mjs` | Turns `supabase/migrations/0001 … 0011` into one file for schema `biz`. The originals are not changed. |
 | `20261109120000_biz_schema.sql` | GENERATED. All Biz tables, functions and rules in schema `biz`. One transaction; a second paste changes nothing. |
+| `paste-0012-chatwoot.sh` → `20261110000000_chatwoot_biz.sql` | Chatwoot tables/functions only, for a project where `biz` is already installed (safe to run twice). |
 
 What `make.mjs` changes, and only this: `public.` → `biz.`; `search_path = public` → `search_path = biz, public`; the kids
 photo rules on the shared `storage.objects` read folder names with `biz.try_uuid(…)` (EAB's own folder names are not ids);
@@ -17,7 +18,7 @@ The build (`.github/workflows/android.yml`) fails if the generated file is out o
 
 ## Install (TEST project only)
 1. Supabase → EAB-QA-Test → SQL Editor → paste `20261109120000_biz_schema.sql` → Run. Expect
-   `AI Buddy Biz installed in schema biz: 133 tables`.
+   `AI Buddy Biz installed in schema biz: 136 tables`.
 2. Then the Biz admin file from the admin-eab repo: `database/20261109120000_biz_admin_in_eab_qa_test.sql`.
 3. Project Settings → Data API → Exposed schemas: add `biz`.
 4. Authentication → URL Configuration → Redirect URLs: add `aibuddybiz://login-callback` (and the Admin apps'

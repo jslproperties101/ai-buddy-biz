@@ -36,4 +36,21 @@ export class ChatwootClient {
       private: opts.private === true,
     });
   }
+
+  /** Recent messages of a conversation (oldest first), reduced to who said what. Private notes and system lines are left out. */
+  async listMessages(accountId: number, conversationId: number): Promise<{ from: "customer" | "team"; text: string }[]> {
+    const r = (await this.call("GET", `/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`)) as { payload?: unknown };
+    const rows = Array.isArray(r?.payload) ? (r.payload as Record<string, unknown>[]) : [];
+    const out: { from: "customer" | "team"; text: string }[] = [];
+    for (const m of rows) {
+      if (m.private === true || typeof m.content !== "string" || m.content.trim() === "") continue;
+      // Chatwoot's REST API gives message_type as a number (0 incoming, 1 outgoing); webhooks give a word.
+      const t = m.message_type;
+      const incoming = t === 0 || t === "incoming";
+      const outgoing = t === 1 || t === "outgoing";
+      if (!incoming && !outgoing) continue;
+      out.push({ from: incoming ? "customer" : "team", text: m.content.trim().slice(0, 500) });
+    }
+    return out;
+  }
 }

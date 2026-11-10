@@ -34,6 +34,13 @@ jobs:
         working-directory: .
         run: node supabase/eab-qa-test/make.mjs --check
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Chatwoot bridge tests (no network)
+        working-directory: .
+        run: node --test --experimental-strip-types supabase/functions/chatwoot-bridge/tests/*.test.ts
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

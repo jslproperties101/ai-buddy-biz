@@ -1,8 +1,8 @@
-# Chatwoot for Ai buddy Biz — self-host package (Phase 1)
+# Chatwoot for Ai buddy Biz — self-host package (Phase 1 + Phase 2)
 
 Chatwoot is the shared customer inbox. The **chatwoot-bridge** Edge Function (`supabase/functions/chatwoot-bridge/`) connects it to Ai buddy Biz.
 
-**Status:** files written and checked for syntax only. Nothing here has been run on a real server yet. Treat the first deploy as a test.
+**Status:** Phase 1 (server package, signature check, test reply) and Phase 2 (AI-drafted replies as private notes, leads, product lookup) are written and tested with fakes and a local database. **Nothing has been run on a real Chatwoot server, against the real Claude API, or on the EAB-QA-Test project yet.** Treat the first deploy as a test.
 
 ## What you need
 
@@ -74,4 +74,44 @@ Which Supabase project the function is deployed to follows the Biz decision (EAB
 
 ```bash
 node --test --experimental-strip-types supabase/functions/chatwoot-bridge/tests/bridge.test.ts
+```
+
+## Phase 2: Claude drafts, a person sends (`BRIDGE_MODE=draft`)
+
+What happens when a customer writes in:
+1. The bridge checks the signature and asks the database whether this delivery is new, a retry of one that failed, or a duplicate (`chatwoot_events`; survives restarts and several instances).
+2. **Lead:** the first time a conversation has a name plus a phone or email (WhatsApp gives the phone), it is saved as a lead through Biz's existing lead rules (contact de-duplicated by phone/email, one deal, the message as a note, source `chatwoot`). One lead per conversation. If this fails, the draft still goes out and it is tried again on the next message.
+3. **Draft:** Claude (default `claude-sonnet-5-5`) writes a short suggested reply from the last few messages and a **read-only product lookup** (name, description, variant, price, in stock yes/no). It never sees cost or stock counts.
+4. The draft is posted as a **private note** starting `Suggested reply (draft, NOT sent to the customer):`. Only your team sees it; a person copies it into the reply box. The bridge never sends anything to the customer in this mode. When Claude is unsure (complaints, refunds, anything not in the product data) the draft starts with `[NEEDS A PERSON]`.
+
+### One-time setup (test project only: EAB-QA-Test)
+1. In the EAB-QA-Test SQL editor: if schema `biz` is **not** installed yet, run `supabase/eab-qa-test/20261109120000_biz_schema.sql` (it now includes Chatwoot). If `biz` is **already installed**, run only `supabase/eab-qa-test/20261110000000_chatwoot_biz.sql` (safe to run twice; the main file refuses a second run by design).
+2. Link the Chatwoot account to the business (replace the numbers/ids):
+   ```sql
+   insert into biz.chatwoot_accounts (account_id, tenant_id) values (1, '<tenant uuid>');
+   ```
+   (Chatwoot account id is the number in the Chatwoot URL, `/app/accounts/<id>/`.) The business also needs its CRM settings opened once in the app so the lead form key exists.
+3. Secrets, then switch the mode:
+   ```bash
+   supabase secrets set ANTHROPIC_API_KEY=<key> CHATWOOT_API_TOKEN=<token> CHATWOOT_BASE_URL=https://<your domain> BRIDGE_MODE=draft
+   supabase functions deploy chatwoot-bridge --no-verify-jwt
+   ```
+   `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are provided to the function by Supabase.
+4. Send a test message from the website widget. Within a few seconds a private note should appear, and a lead in Biz.
+
+### Things to know before using it with real customers
+- **Customer messages are sent to Anthropic (Claude) to write the draft.** Mention this in your privacy notice (PDPA) before real WhatsApp customers.
+- Every active product of the business can be quoted, including services and bundles. Deactivate anything that should not be offered.
+- The draft is only as good as the product data; with no match it says so and asks for a person.
+- Cost: one Claude request per customer message (two when it looks up products).
+
+### Assumptions to confirm on the first real run
+- Chatwoot's message-list API (`GET …/conversations/{id}/messages`) is read as `{ payload: [{ content, message_type: 0|1, private }] }`. If it differs, drafts still work but without earlier messages (the log says `history unavailable`).
+- A failed delivery is retried only if Chatwoot re-sends it; otherwise the customer's next message triggers a fresh draft.
+- Not tested under Deno itself (tests run on Node 22 with the same files).
+
+### Tests
+```bash
+node --test --experimental-strip-types supabase/functions/chatwoot-bridge/tests/*.test.ts     # bridge (no network)
+PGHOST=… supabase/tests/run-0012.sh <stand-in-supabase.sql>                                     # database functions on local PostgreSQL
 ```
