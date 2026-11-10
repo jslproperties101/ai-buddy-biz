@@ -4,7 +4,8 @@
 // except new customer messages, and then, depending on BRIDGE_MODE:
 //   observe     (default) acknowledge only; never replies
 //   test-reply  post one fixed test reply (Phase 1 loop test)
-//   live        Claude answers the customer, saves the lead into Ai buddy Biz, and hands over to a person when needed (Phase 2)
+//   live        Claude answers the customer, saves the lead into Ai buddy Biz, can search approved listings and request
+//               (never confirm) viewings, and hands over to a person when needed (Phases 2-3)
 //
 // Function secrets (supabase secrets set …):
 //   CHATWOOT_WEBHOOK_SECRET  the `secret` Chatwoot returns when the webhook is created (required)
@@ -14,6 +15,7 @@
 //   BRIDGE_TEST_REPLY        text for test-reply mode
 //   ANTHROPIC_API_KEY        live mode only
 //   AI_MODEL                 live mode, optional (default claude-sonnet-5-5)
+//   BRIDGE_LISTING_TOOLS     live mode, set to "off" to stop Claude searching listings and requesting viewings (default on)
 //   BIZ_DB_SCHEMA            live mode, default "biz" (EAB-QA-Test); "public" for a stand-alone Biz project
 //   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY   provided by Supabase automatically
 //
@@ -64,6 +66,7 @@ Deno.serve((req) => {
       anthropicKey,
       model: Deno.env.get("AI_MODEL") ?? "claude-sonnet-5-5",
       log,
+      listingTools: Deno.env.get("BRIDGE_LISTING_TOOLS") !== "off",
     };
   }
 

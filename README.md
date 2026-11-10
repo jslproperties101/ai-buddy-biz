@@ -5,7 +5,7 @@ All-in-one business super app: POS, inventory, invoicing, accounting, tax, CRM, 
 - `docs/ARCHITECTURE.md` — Batch A architecture and customisation engine
 - `supabase/migrations/` — database schema
 - `docs/tests/` — test checklist per batch
-- `chatwoot/` — self-hosted Chatwoot customer inbox package, plus `supabase/functions/chatwoot-bridge/` (Phases 1–2: deploy package, bridge, Claude auto-reply and lead capture; not yet run on a server)
+- `chatwoot/` — self-hosted Chatwoot customer inbox package, plus `supabase/functions/chatwoot-bridge/` (Phases 1–3: deploy package, bridge, Claude auto-reply and lead capture, listing search and viewing requests; not yet run on a server)
 
 ## Batches
 

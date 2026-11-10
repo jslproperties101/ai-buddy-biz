@@ -26,7 +26,11 @@ if (files.length === 0) throw new Error('no migrations found');
 
 // Migrations added AFTER the first install (Biz may already be installed in EAB-QA-Test) also get their own small file,
 // which can be pasted on top of an existing biz schema. The big file above still contains everything for fresh installs.
-const INCREMENTAL = { '0012_chat.sql': '20261110120000' };   // migration file -> timestamp of its incremental file
+// migration file -> its incremental file's timestamp, the object that must already exist, and an object that shows it is already applied
+const INCREMENTAL = {
+  '0012_chat.sql': { stamp: '20261110120000', requires: 'biz.tenants', marker: 'biz.chat_accounts' },
+  '0013_chat_listings.sql': { stamp: '20261110180000', requires: 'biz.chat_accounts', marker: 'biz.chat_viewing_requests' },
+};
 
 const defined = new Set(), used = new Set();
 const converted = {};
@@ -78,7 +82,7 @@ select 'AI Buddy Biz installed in schema biz: ' || (select count(*) from pg_tabl
 const text = header + parts.join('\n') + footer;
 
 const outputs = [[OUT, text]];
-for (const [f, stamp] of Object.entries(INCREMENTAL)) {
+for (const [f, { stamp, requires, marker }] of Object.entries(INCREMENTAL)) {
   if (!converted[f]) throw new Error(`INCREMENTAL names ${f}, which is not in supabase/migrations`);
   const name = `${stamp}_biz_${f.replace(/\.sql$/, '')}.sql`;
   const body = `-- AI Buddy Biz — incremental change for an ALREADY INSTALLED biz schema: ${f}
@@ -87,10 +91,10 @@ for (const [f, stamp] of Object.entries(INCREMENTAL)) {
 -- All or nothing: one transaction. Stops and changes nothing if biz is not installed yet or this change is already there.
 begin;
 do $guard$ begin
-  if to_regclass('biz.tenants') is null then
-    raise exception 'Install the main biz schema file first; nothing was changed';
+  if to_regclass('${requires}') is null then
+    raise exception '${requires === 'biz.tenants' ? 'Install the main biz schema file first' : `Apply the earlier biz files first (${requires} is missing)`}; nothing was changed';
   end if;
-  if to_regclass('biz.chat_accounts') is not null then
+  if to_regclass('${marker}') is not null then
     raise exception '${f} is already applied in schema biz; nothing was changed';
   end if;
 end $guard$;

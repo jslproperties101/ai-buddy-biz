@@ -3,7 +3,7 @@
 // against a real Postgres (see the Phase 2 report).
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
-import type { BridgeStore, BusinessContext, ClaimResult, LeadInput } from "./store.ts";
+import type { BridgeStore, BusinessContext, ClaimResult, LeadInput, Listing, ViewingResult } from "./store.ts";
 
 export class SupabaseStore implements BridgeStore {
   private db: SupabaseClient;
@@ -46,6 +46,20 @@ export class SupabaseStore implements BridgeStore {
       p: { name: lead.name, phone: lead.phone, email: lead.email, interest: lead.interest, summary: lead.summary, language: lead.language, source: lead.source, values: lead.values },
     });
     return { contactId: d.contact_id as string, dealId: d.deal_id as string, created: d.created === true };
+  }
+
+  async searchListings(tenantId: string, query: string, limit: number): Promise<Listing[]> {
+    const d = await this.rpc("chat_search_listings", { p_tenant: tenantId, p_query: query, p_limit: limit });
+    return Array.isArray(d) ? (d as Listing[]) : [];
+  }
+
+  async requestViewing(tenantId: string, accountId: number, conversationId: number, req: { ref: string; startLocal: string; notes: string }): Promise<ViewingResult> {
+    const d = await this.rpc("chat_request_viewing", {
+      p_tenant: tenantId, p_account: accountId, p_conversation: conversationId,
+      p: { ref: req.ref, start_local: req.startLocal, notes: req.notes },
+    });
+    if (!d?.ok) return { ok: false, reason: String(d?.reason ?? "unknown") };
+    return { ok: true, duplicate: d.duplicate === true, bookingId: String(d.booking_id), startLocal: String(d.start_local) };
   }
 
   async recordTurn(a: Parameters<BridgeStore["recordTurn"]>[0]): Promise<void> {

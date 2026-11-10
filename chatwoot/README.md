@@ -1,8 +1,8 @@
-# Chatwoot for Ai buddy Biz — self-host package (Phases 1–2)
+# Chatwoot for Ai buddy Biz — self-host package (Phases 1–3)
 
 Chatwoot is the shared customer inbox. The **chatwoot-bridge** Edge Function (`supabase/functions/chatwoot-bridge/`) connects it to Ai buddy Biz.
 
-**Status:** Phase 1 (deploy package, bridge skeleton) and Phase 2 (Claude auto-reply, lead capture) are written and unit-tested. The database changes were run on a throwaway local Postgres. Nothing has been run against a real Chatwoot server, the real Anthropic API, WhatsApp, or the EAB-QA-Test project yet. Treat the first deploy as a test.
+**Status:** Phase 1 (deploy package, bridge skeleton), Phase 2 (Claude auto-reply, lead capture) and Phase 3 (listings from the product catalogue, viewing requests) are written and unit-tested. The database changes were run on a throwaway local Postgres. Nothing has been run against a real Chatwoot server, the real Anthropic API, WhatsApp, or the EAB-QA-Test project yet. Treat the first deploy as a test.
 
 ## What you need
 
@@ -91,6 +91,36 @@ Then run the manual checks in `docs/tests/Chatwoot-Phase2-test-checklist.md`.
 
 - Chatwoot's `toggle_status` and message-history endpoints and the `message_type` numbers (0 customer, 1 agent/bot) follow its API docs as I understand them but were only tested against fake responses. If handover does not move a conversation to "open", or history is empty, check the function logs for `handover status failed` / `history unavailable`.
 - `conversation.meta.assignee` in the webhook is used to detect an assigned human; if Chatwoot does not send it, the bot may reply in conversations a human has taken. Use `bot_enabled` or `max_bot_replies` as the safety net until confirmed.
+
+## 6. Phase 3: listings and viewing requests
+
+Claude can now look up listings and ask for a viewing, using two tools inside the bridge. It cannot do anything else in your data.
+
+**Listings.** Only products you explicitly flag are visible to the bot. For each flagged product it sees just: a reference (the lowest active variant SKU), the name, the "from" price with currency, and the text you wrote for the bot (`chat_info`, cut at 600 characters). It never sees cost, stock, custom fields, suppliers or images. Claude is told to quote only what the search returns, to say prices and availability are subject to confirmation by the team, and never to invent a listing.
+
+**Viewings.** When a customer gives a specific date and time, Claude calls `request_viewing`. This creates a **pending** booking (60 minutes, "Property viewing" service, notes saying it is NOT confirmed) and an unowned task due in one hour, then **always hands the conversation over** to a person, even if Claude did not ask to. Claude is told never to say a viewing is booked or confirmed. Safeguards in the database function: time must be 2 hours to 90 days ahead, in your business time zone; at most 3 pending/confirmed requests per conversation; the same start time in the same conversation is not duplicated; a contact must exist (the bridge saves one first).
+
+### Apply the database change (needs your approval, test project only)
+
+1. EAB-QA-Test (schema `biz`): paste `supabase/eab-qa-test/20261110180000_biz_0013_chat_listings.sql` into the SQL editor. It needs the Phase 2 file applied first and stops without changing anything if that is missing or if this is already applied. (A stand-alone Biz project: apply `supabase/migrations/0013_chat_listings.sql`.) A **fresh** EAB-QA-Test install using the regenerated `20261109120000_biz_schema.sql` already includes both.
+2. Flag the listings the bot may talk about. The Flutter app has no switch for this yet, so use SQL:
+   ```sql
+   update biz.products
+      set chat_visible = true,
+          chat_info = '3 bedrooms, 1,200 sq ft, fully furnished, near MRT. Freehold.'
+    where id = '<product id>';
+   ```
+   Write `chat_info` as something you are happy for any customer to read. To hide a listing again set `chat_visible = false`.
+3. Redeploy the bridge: `supabase functions deploy chatwoot-bridge --no-verify-jwt`.
+
+To turn the two tools off without touching anything else: `supabase secrets set BRIDGE_LISTING_TOOLS=off` (the bot then behaves exactly as in Phase 2).
+
+### Assumptions to confirm on first run (Phase 3)
+
+- Your property listings are stored as Biz products, with the price on the variant. If most of yours have no price or a placeholder price, the "from" price shown to customers will be wrong; check what the bot quotes.
+- The business time zone in Biz settings is correct, since customer times are read in it.
+- Staff will see the pending viewing under bookings and as a task; confirming it with the customer is a manual step (follow-ups and an approval queue are Phase 4, not built).
+- Each customer message may now cost up to 5 Claude calls (searches plus the answer), and all of them count as AI usage tokens; the monthly plan quota still counts one request per customer message.
 
 ## Assumptions to confirm on first run (Phase 1)
 
