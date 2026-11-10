@@ -11,6 +11,7 @@ export type IncomingMessage = {
   contactName: string | null;
   contactPhone: string | null;
   conversationStatus: string | null;
+  hasAssignee: boolean; // a human agent already owns the conversation
 };
 
 export type Classification =
@@ -56,6 +57,7 @@ export function classifyEvent(payload: Json): Classification {
       contactName: typeof sender.name === "string" ? sender.name : null,
       contactPhone: typeof sender.phone_number === "string" ? sender.phone_number : null,
       conversationStatus: typeof payload.conversation?.status === "string" ? payload.conversation.status : null,
+      hasAssignee: payload.conversation?.meta?.assignee != null,
     },
   };
 }

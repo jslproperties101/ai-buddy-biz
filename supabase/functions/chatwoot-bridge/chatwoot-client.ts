@@ -28,6 +28,27 @@ export class ChatwootClient {
     return await res.json().catch(() => ({}));
   }
 
+  /**
+   * Recent customer/agent messages of a conversation, oldest first. In Chatwoot's REST API message_type 0 is incoming
+   * (customer) and 1 is outgoing (agent or bot); activity lines, templates and private notes are left out.
+   */
+  async getRecentTurns(accountId: number, conversationId: number, limit = 12): Promise<{ role: "user" | "assistant"; content: string }[]> {
+    const d = (await this.call("GET", `/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`)) as {
+      payload?: { content?: unknown; message_type?: unknown; private?: unknown; created_at?: unknown }[];
+    };
+    const rows = Array.isArray(d?.payload) ? d.payload : [];
+    return rows
+      .filter((m) => m && m.private !== true && (m.message_type === 0 || m.message_type === 1) && typeof m.content === "string" && m.content.trim() !== "")
+      .sort((a, b) => Number(a.created_at ?? 0) - Number(b.created_at ?? 0))
+      .slice(-limit)
+      .map((m) => ({ role: m.message_type === 0 ? "user" as const : "assistant" as const, content: m.content as string }));
+  }
+
+  /** Move a conversation to "open" so it shows up in the human agents' queue (bot-handled ones sit in "pending"). */
+  setStatus(accountId: number, conversationId: number, status: "open" | "pending" | "resolved"): Promise<unknown> {
+    return this.call("POST", `/api/v1/accounts/${accountId}/conversations/${conversationId}/toggle_status`, { status });
+  }
+
   /** Send a reply to the customer (private=false) or an internal note for agents only (private=true). */
   sendMessage(accountId: number, conversationId: number, content: string, opts: { private?: boolean } = {}): Promise<unknown> {
     return this.call("POST", `/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`, {

@@ -113,7 +113,7 @@ test("classify: incoming text message is accepted with fields mapped", () => {
     assert.deepEqual(c.message, {
       accountId: 1, conversationId: 55, messageId: 101,
       content: "Hi, is the Mont Kiara condo still available?",
-      channel: "Channel::Whatsapp", contactId: 9, contactName: "Aisha", contactPhone: "+60123456789", conversationStatus: "pending",
+      channel: "Channel::Whatsapp", contactId: 9, contactName: "Aisha", contactPhone: "+60123456789", conversationStatus: "pending", hasAssignee: false,
     });
   }
 });
@@ -215,4 +215,42 @@ test("handler: Chatwoot API failure returns 502 and does not throw", async () =>
   const res = await post(incoming(), deps);
   assert.equal(res.status, 502);
   assert.ok(logs.some((l) => l.includes("test reply failed")));
+});
+
+// ---------- client: history and status (Phase 2) ----------
+
+test("client: getRecentTurns keeps customer/agent text only, oldest first, newest N", async () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const payload = [
+    { content: "third", message_type: 0, created_at: 3 },
+    { content: "first", message_type: 0, created_at: 1 },
+    { content: "second", message_type: 1, created_at: 2 },
+    { content: "internal note", message_type: 1, private: true, created_at: 4 },
+    { content: "joined the chat", message_type: 2, created_at: 5 },
+    { content: "template", message_type: 3, created_at: 6 },
+    { content: "   ", message_type: 0, created_at: 7 },
+    { content: null, message_type: 0, created_at: 8 },
+  ];
+  const c = new ChatwootClient("https://chat.test", "tok", async (url, init) => { calls.push({ url, init: init! }); return new Response(JSON.stringify({ payload }), { status: 200 }); });
+  assert.deepEqual(await c.getRecentTurns(1, 55), [
+    { role: "user", content: "first" }, { role: "assistant", content: "second" }, { role: "user", content: "third" },
+  ]);
+  assert.equal(calls[0].url, "https://chat.test/api/v1/accounts/1/conversations/55/messages");
+  assert.equal(calls[0].init.method, "GET");
+  assert.equal(calls[0].init.body, undefined);
+  assert.deepEqual(await c.getRecentTurns(1, 55, 2), [{ role: "assistant", content: "second" }, { role: "user", content: "third" }]);
+});
+
+test("client: getRecentTurns tolerates an unexpected response shape", async () => {
+  const c = new ChatwootClient("https://chat.test", "tok", async () => new Response(JSON.stringify({ nope: true }), { status: 200 }));
+  assert.deepEqual(await c.getRecentTurns(1, 55), []);
+});
+
+test("client: setStatus posts the documented toggle_status request", async () => {
+  const calls: { url: string; init: RequestInit }[] = [];
+  const c = new ChatwootClient("https://chat.test", "tok", async (url, init) => { calls.push({ url, init: init! }); return new Response("{}", { status: 200 }); });
+  await c.setStatus(1, 55, "open");
+  assert.equal(calls[0].url, "https://chat.test/api/v1/accounts/1/conversations/55/toggle_status");
+  assert.equal(calls[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].init.body as string), { status: "open" });
 });

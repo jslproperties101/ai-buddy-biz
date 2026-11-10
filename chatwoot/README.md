@@ -1,8 +1,8 @@
-# Chatwoot for Ai buddy Biz — self-host package (Phase 1)
+# Chatwoot for Ai buddy Biz — self-host package (Phases 1–2)
 
 Chatwoot is the shared customer inbox. The **chatwoot-bridge** Edge Function (`supabase/functions/chatwoot-bridge/`) connects it to Ai buddy Biz.
 
-**Status:** files written and checked for syntax only. Nothing here has been run on a real server yet. Treat the first deploy as a test.
+**Status:** Phase 1 (deploy package, bridge skeleton) and Phase 2 (Claude auto-reply, lead capture) are written and unit-tested. The database changes were run on a throwaway local Postgres. Nothing has been run against a real Chatwoot server, the real Anthropic API, WhatsApp, or the EAB-QA-Test project yet. Treat the first deploy as a test.
 
 ## What you need
 
@@ -60,7 +60,39 @@ Which Supabase project the function is deployed to follows the Biz decision (EAB
    Send another message: a fixed test reply should appear in the conversation, and only once.
 3. Set `BRIDGE_MODE=observe` again when done. Phase 2 replaces the fixed reply with Claude.
 
-## Assumptions to confirm on first run
+## 5. Phase 2: Claude replies and lead capture (`BRIDGE_MODE=live`)
+
+What it does for each new customer message: de-duplicates the webhook in the database, checks the switches and limits, asks Claude (with the last few messages), saves the lead into Ai buddy Biz (one contact and one lead per conversation, no marketing consent), sends the reply, and hands over to a person when needed (private note with a summary, conversation moved to "open").
+
+**Limits that stop the bot before any AI money is spent:** `chat_accounts.bot_enabled = false`, a human already assigned, conversation already handed over, the plan's monthly AI limit (same counter as the in-app assistant: free 10, starter 50, growth 300 requests a month), and `max_bot_replies` per conversation (default 6). Claude replies containing a link are never sent.
+
+### Apply the database change (needs your approval, test project only)
+
+1. EAB-QA-Test (schema `biz`): paste `supabase/eab-qa-test/20261110120000_biz_0012_chat.sql` into the SQL editor. It stops and changes nothing if biz is not installed or this is already applied. (A stand-alone Biz project: apply `supabase/migrations/0012_chat.sql`.)
+2. Link your Chatwoot account to your business (find the Chatwoot account id in its URL, `/app/accounts/<id>/…`):
+   ```sql
+   insert into biz.chat_accounts (chatwoot_account_id, tenant_id) values (1, '<your tenant id>');
+   ```
+
+### Switch it on
+
+```bash
+supabase secrets set BRIDGE_MODE=live ANTHROPIC_API_KEY=<key> CHATWOOT_API_TOKEN=<token>
+supabase functions deploy chatwoot-bridge --no-verify-jwt
+```
+
+Optional: `AI_MODEL` (default `claude-sonnet-5-5`), `BIZ_DB_SCHEMA` (default `biz`; `public` for a stand-alone project). To stop the bot at any time set `BRIDGE_MODE=observe`, or `update biz.chat_accounts set bot_enabled = false`.
+
+Then run the manual checks in `docs/tests/Chatwoot-Phase2-test-checklist.md`.
+
+**What the bot cannot do yet:** it has no listing, price or availability data (Phase 3), so its prompt tells it to leave those to a person. It does not read images, voice notes or documents, and it replies in text only.
+
+### Extra assumptions to confirm on first run
+
+- Chatwoot's `toggle_status` and message-history endpoints and the `message_type` numbers (0 customer, 1 agent/bot) follow its API docs as I understand them but were only tested against fake responses. If handover does not move a conversation to "open", or history is empty, check the function logs for `handover status failed` / `history unavailable`.
+- `conversation.meta.assignee` in the webhook is used to detect an assigned human; if Chatwoot does not send it, the bot may reply in conversations a human has taken. Use `bot_enabled` or `max_bot_replies` as the safety net until confirmed.
+
+## Assumptions to confirm on first run (Phase 1)
 
 - **Timestamp format.** Chatwoot's docs say the signature covers the timestamp, a period and the raw body, but do not say whether the timestamp is seconds or milliseconds. The bridge accepts both and rejects deliveries older than 5 minutes. If every webhook returns 401 with `reason: stale_timestamp` or `bad_timestamp`, check the server clock and the header format.
 - **Webhook payload fields** (`message_type: "incoming"`, `conversation.id`, `account.id`, `sender`) follow Chatwoot's documented shape but were only tested against sample payloads written from it, not real deliveries.
@@ -73,5 +105,5 @@ Which Supabase project the function is deployed to follows the Biz decision (EAB
 ## Tests
 
 ```bash
-node --test --experimental-strip-types supabase/functions/chatwoot-bridge/tests/bridge.test.ts
+node --test --experimental-strip-types supabase/functions/chatwoot-bridge/tests/*.test.ts
 ```
