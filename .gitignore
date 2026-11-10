@@ -5,3 +5,7 @@ app/.flutter-plugins-dependencies
 app/android/
 app/pubspec.lock
 *.apk
+
+# Chatwoot self-host: secrets and runtime data never go in git
+chatwoot/.env
+chatwoot/data/

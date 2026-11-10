@@ -1,0 +1,6 @@
+# HTTPS reverse proxy. Caddy gets and renews the TLS certificate by itself once the domain's DNS A record
+# points at this server and ports 80/443 are open.
+{$CHATWOOT_DOMAIN} {
+	encode gzip
+	reverse_proxy rails:3000
+}
