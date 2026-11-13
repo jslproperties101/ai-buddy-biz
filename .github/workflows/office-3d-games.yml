@@ -1,0 +1,69 @@
+name: Office 3D Games APKs
+
+# Builds the two 3D office games (NovaCorp HQ - Opus, Fable Dynamics HQ - Fable) as Android APKs.
+# Lives in office-3d-games/. Runs only on the games/office-3d-games branch so the Biz APK build is untouched.
+on:
+  push:
+    branches: ['games/**']
+    paths: ['office-3d-games/**', '.github/workflows/office-3d-games.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: office-3d-games
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bundle Three.js (so games work offline in the APK)
+        run: |
+          mkdir -p site/vendor
+          curl -fsSL https://unpkg.com/three@0.128.0/build/three.min.js -o site/vendor/three.min.js
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Copy games into the app
+        run: |
+          mkdir -p android/app/src/main/assets
+          cp -r site android/app/src/main/assets/site
+
+      - name: Build APKs
+        working-directory: office-3d-games/android
+        run: gradle assembleDebug --no-daemon
+
+      - name: Collect APKs
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/opus/debug/*.apk dist/NovaCorp-HQ-Opus.apk
+          cp android/app/build/outputs/apk/fable/debug/*.apk dist/Fable-Dynamics-HQ-Fable.apk
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apks
+          path: office-3d-games/dist/*.apk
+
+      - name: Publish release with APKs
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: office3d-build-${{ github.run_number }}
+          name: Office 3D Games build ${{ github.run_number }}
+          body: Download the APK for the game you want and open it on your Android phone.
+          files: office-3d-games/dist/*.apk
+          target_commitish: ${{ github.sha }}
+          make_latest: false
+
